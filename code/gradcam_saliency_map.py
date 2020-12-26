@@ -138,10 +138,11 @@ class FmriDataset(Dataset):
             img = self.apply_temporal_aug(img)
             return img, score
         except Exception as error:
-            print(error)
-            print(self.samples[idx])
+            # print(error)
+            # print(self.samples[idx])
             with open('error.txt', 'a') as error_file:
-                error_file.write(str(error) + '\n')
+                error_file.write(str(self.samples[idx]) + '\n')
+                error_file.write(str(error) + '\n\n')
             return None
 
     def index_data(self):
@@ -273,7 +274,6 @@ def train(net, train_loader, loss_function, optimizer):
             loss = loss_function(outputs, labels)
             loss.backward()
             optimizer.step()
-        break
 
         print(f'Epoch: {epoch} | Loss: {loss}')
 
