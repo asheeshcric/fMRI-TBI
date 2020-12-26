@@ -21,6 +21,8 @@ import torch.nn.parallel
 from torch import optim
 from torch.nn.modules.utils import _triple
 from torch.utils.data import Dataset, DataLoader, random_split
+# This is imported to fix any data error in a batch
+from torch.utils.data.dataloader import default_collate
 from torchvision import transforms, utils
 
 from tqdm import tqdm
@@ -246,6 +248,13 @@ class FmriDataset(Dataset):
 
         return weights
 
+    
+def my_collate(batch):
+    # Function to catch errors while reading a batch of fMRI scans
+    # Removes any NoneType values from the batch to prevent errors while training
+    batch = list(filter(lambda x: x is not None, batch))
+    return default_collate(batch)
+    
 
 def train_test_length(total, test_pct=0.2):
     train_count = int((1-test_pct)*total)
@@ -257,9 +266,6 @@ def train(net, train_loader, loss_function, optimizer):
     print('Training...')
     for epoch in range(params.nEpochs):
         for batch in tqdm(train_loader):
-            if not batch:
-                # Found some corrupted scan files that could not be read
-                continue
             inputs, labels = batch[0].to(device), batch[1].to(device)
             optimizer.zero_grad()
 
@@ -267,6 +273,7 @@ def train(net, train_loader, loss_function, optimizer):
             loss = loss_function(outputs, labels)
             loss.backward()
             optimizer.step()
+        break
 
         print(f'Epoch: {epoch} | Loss: {loss}')
 
@@ -326,9 +333,9 @@ for k in range(k_fold):
     optimizer = optim.Adam(net.parameters(), lr=0.001)
 
     train_loader = DataLoader(
-        trainset, batch_size=params.batchSize, shuffle=True)
+        trainset, batch_size=params.batchSize, shuffle=True, collate_fn=my_collate)
     test_loader = DataLoader(
-        testset, batch_size=params.batchSize, shuffle=True)
+        testset, batch_size=params.batchSize, shuffle=True, collate_fn=my_collate)
 
     net = train(net, train_loader, loss_function, optimizer)
     # Save the model checkpoint
