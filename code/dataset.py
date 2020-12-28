@@ -27,19 +27,12 @@ class FmriDataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, idx):
-        try:
-            img_path, score = self.samples[idx]
-            score = self.get_class(score)
-            img = self.read_image(img_path)
-            # img = self.apply_mask(img)
-            img = self.apply_temporal_aug(img)
-            return img, score
-        except Exception as error:
-            print(error)
-            print(self.samples[idx])
-            with open('error.txt', 'a') as error_file:
-                error_file.write(str(error) + '\n')
-            return None
+        img_path, score = self.samples[idx]
+        score = self.get_class(score)
+        img = self.read_image(img_path)
+        # img = self.apply_mask(img)
+        img = self.apply_temporal_aug(img)
+        return img, score
 
     def index_data(self):
         """

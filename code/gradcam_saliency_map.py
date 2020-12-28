@@ -5,6 +5,7 @@ import os
 import random
 
 import nilearn as nil
+from nilearn import image as nil_image
 import numpy as np
 
 from scipy import ndimage
@@ -130,20 +131,12 @@ class FmriDataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, idx):
-        try:
-            img_path, score = self.samples[idx]
-            score = self.get_class(score)
-            img = self.read_image(img_path)
-            # img = self.apply_mask(img)
-            img = self.apply_temporal_aug(img)
-            return img, score
-        except Exception as error:
-            # print(error)
-            # print(self.samples[idx])
-            with open('error.txt', 'a') as error_file:
-                error_file.write(str(self.samples[idx]) + '\n')
-                error_file.write(str(error) + '\n\n')
-            return None
+        img_path, score = self.samples[idx]
+        score = self.get_class(score)
+        img = self.read_image(img_path)
+        # img = self.apply_mask(img)
+        img = self.apply_temporal_aug(img)
+        return img, score
 
     def index_data(self):
         """
@@ -152,6 +145,7 @@ class FmriDataset(Dataset):
         self.weights = {i: 0 for i in range(self.num_classes)}
         for sub in os.listdir(self.data_dir):
             if sub not in self.params.subs:
+                # Don't consider subjects that are not in the subs set
                 continue
             sub_dir = os.path.join(self.data_dir, sub)
             preproc_dir = os.path.join(sub_dir, f'{sub}.preproc')
@@ -197,7 +191,7 @@ class FmriDataset(Dataset):
 
     def read_image(self, img_path):
         nX, nY, nZ, nT = self.img_shape
-        img = nil.image.load_img(img_path)
+        img = nil_image.load_img(img_path)
         img = img.get_fdata()[:nX, :nY, :nZ, :nT]
         img = torch.tensor(img, dtype=torch.float, device=self.device)
         img = (img - img.mean()) / img.std()
@@ -312,11 +306,11 @@ accs = []
 cf_matrix = []
 for k in range(k_fold):
     train_subs, test_subs = train_test_subs(test_pct=0.2)
-    # print(train_subs)
-    # print(test_subs)
+    # print(f'Train-subs: {len(train_subs)}')
+    # print(f'Test-subs: {len(test_subs)}')
     params.update({'subs': train_subs})
     trainset = FmriDataset(params=params)
-    params.update({'subs': train_subs})
+    params.update({'subs': test_subs})
     testset = FmriDataset(params=params)
 
     class_weights = torch.FloatTensor(
@@ -333,9 +327,11 @@ for k in range(k_fold):
     optimizer = optim.Adam(net.parameters(), lr=0.001)
 
     train_loader = DataLoader(
-        trainset, batch_size=params.batchSize, shuffle=True, collate_fn=my_collate)
+        trainset, batch_size=params.batchSize, shuffle=True)
     test_loader = DataLoader(
-        testset, batch_size=params.batchSize, shuffle=True, collate_fn=my_collate)
+        testset, batch_size=params.batchSize, shuffle=True)
+    
+    # You can use my_collate() function inside the dataloader to check for errors while reading corrupted scans
 
     net = train(net, train_loader, loss_function, optimizer)
     # Save the model checkpoint
