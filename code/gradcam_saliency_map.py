@@ -314,7 +314,7 @@ accs = []
 cf_matrix = []
 learning_rate = 0.0001
 
-print(f'Parameters: LR: {learning_rate} | Epochs: {params.nEpochs} |K-folds: {k_fold}')
+print(f'Parameters: LR: {learning_rate} | Epochs: {params.nEpochs} | K-folds: {k_fold} | BatchSize: {params.batchSize}')
 
 for k in range(k_fold):
     train_subs, test_subs = train_test_subs(test_pct=0.2)
@@ -366,7 +366,7 @@ for k in range(k_fold):
 print(cf_matrix)
 print(accs)
 print(f'Avg Accuracy: {sum(accs)/len(accs)}')
-print(f'Learning rate used: {learning_rate}')
+print(f'Parameters: LR: {learning_rate} | Epochs: {params.nEpochs} | K-folds: {k_fold} | BatchSize: {params.batchSize}')
 
 with open('abc.txt', 'w') as abc_file:
     for cf in cf_matrix:
