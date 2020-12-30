@@ -39,10 +39,12 @@ class FmriModel(nn.Module):
         super(FmriModel, self).__init__()
 
         self.ndf = params.ndf
-        self.nc = 30
+        # "nc" is the number of timesteps in the input scan (t=nc in this case)
+        self.nc = params.img_timesteps
         self.nClass = params.nClass
 
-        # Input to the model is (30, 57, 68, 49) <== (t, x, y, z)
+        # Input to the model is (t, 57, 68, 49) <== (t, x, y, z)
+        # 't' can change based on the "img_timesteps" value (number of timesteps to be sampled from one scan)
 
         self.conv1 = nn.Sequential(
             nn.Conv2d(params.nX, self.ndf, 5, 2, bias=False),
@@ -114,9 +116,9 @@ class FmriModel(nn.Module):
 class FmriDataset(Dataset):
 
     def __init__(self, params, data_dir='/data/fmri/data', mask_path='/data/fmri/mask/caudate._mask.nii',
-                 img_shape=(57, 68, 49, 135), img_timesteps=30):
+                 img_shape=(57, 68, 49, 135)):
         self.data_dir, self.params = data_dir, params
-        self.img_timesteps = img_timesteps
+        self.img_timesteps = params.img_timesteps
         self.num_classes = params.nClass
         self.device = torch.device(
             "cuda:0" if torch.cuda.is_available() else "cpu")
@@ -242,7 +244,8 @@ class FmriDataset(Dataset):
         key_max = max(weights.keys(), key=(lambda k: weights[k]))
         max_value = weights[key_max]
         for key in weights.keys():
-            weights[key] = max_value / weights[key]
+            # Add 1 to the denominator to avoid divide by zero error (in some cases)
+            weights[key] = max_value / (weights[key]+1)
 
         return weights
 
@@ -282,7 +285,7 @@ def train(net, train_loader, loss_function, optimizer, test_loader):
 
 
 def test(net, test_loader):
-    print('Testing...')
+    # print('Testing...')
     correct = 0
     total = 0
 
@@ -310,11 +313,14 @@ def test(net, test_loader):
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 k_fold = 1
 params.nEpochs = 10
+params.batchSize = 8
 accs = []
 cf_matrix = []
 learning_rate = 0.0001
+sample_timesteps = 100
+params.update({'img_timesteps': sample_timesteps})
 
-print(f'Parameters: LR: {learning_rate} | Epochs: {params.nEpochs} | K-folds: {k_fold} | BatchSize: {params.batchSize}')
+print(f'Parameters: LR: {learning_rate} | Epochs: {params.nEpochs} | K-folds: {k_fold} | BatchSize: {params.batchSize} | Sample timesteps: {sample_timesteps}')
 
 for k in range(k_fold):
     train_subs, test_subs = train_test_subs(test_pct=0.2)
@@ -348,8 +354,8 @@ for k in range(k_fold):
     net = train(net, train_loader, loss_function, optimizer, test_loader)
     # Save the model checkpoint
     current_time = datetime.now()
-    current_time = current_time.strftime("%m%d%Y%H_%M")
-    torch.save(net.state_dict(), f'{current_time}-scans-5-fold-{k}.pth')
+    current_time = current_time.strftime("%m_%d_%Y_%H_%M")
+    torch.save(net.state_dict(), f'{current_time}-fold-{k}-lr-{learning_rate}.pth')
     preds, actual, acc = test(net, test_loader)
     accs.append(acc)
 
@@ -366,7 +372,7 @@ for k in range(k_fold):
 print(cf_matrix)
 print(accs)
 print(f'Avg Accuracy: {sum(accs)/len(accs)}')
-print(f'Parameters: LR: {learning_rate} | Epochs: {params.nEpochs} | K-folds: {k_fold} | BatchSize: {params.batchSize}')
+print(f'Parameters: LR: {learning_rate} | Epochs: {params.nEpochs} | K-folds: {k_fold} | BatchSize: {params.batchSize} | Sample timesteps: {sample_timesteps}')
 
 with open('abc.txt', 'w') as abc_file:
     for cf in cf_matrix:
