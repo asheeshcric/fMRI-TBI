@@ -131,12 +131,15 @@ class FmriDataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, idx):
-        img_path, score = self.samples[idx]
-        score = self.get_class(score)
-        img = self.read_image(img_path)
-        # img = self.apply_mask(img)
-        img = self.apply_temporal_aug(img)
-        return img, score
+        try:
+            img_path, score = self.samples[idx]
+            score = self.get_class(score)
+            img = self.read_image(img_path)
+            # img = self.apply_mask(img)
+            img = self.apply_temporal_aug(img)
+            return img, score
+        except Exception:
+            return None
 
     def index_data(self):
         """
@@ -153,7 +156,7 @@ class FmriDataset(Dataset):
                 img_path = os.path.join(preproc_dir, img_name)
                 score = self.get_score(sub_dir, img_name)
                 score_class = self.get_class(score)
-                # Since we are randomly sampling 15 timesteps from each scan of 135 timesteps,
+                # Since we are randomly sampling 30 timesteps from each scan of 135 timesteps,
                 # I am considering the same image for "n" times so that we have more data to train
                 n = 5
                 for k in range(n):
@@ -257,7 +260,7 @@ def train_test_length(total, test_pct=0.2):
     return train_count, test_count
 
 
-def train(net, train_loader, loss_function, optimizer):
+def train(net, train_loader, loss_function, optimizer, test_loader):
     print('Training...')
     for epoch in range(params.nEpochs):
         for batch in tqdm(train_loader):
@@ -268,8 +271,12 @@ def train(net, train_loader, loss_function, optimizer):
             loss = loss_function(outputs, labels)
             loss.backward()
             optimizer.step()
+            
+        
+        _, _, train_acc = test(net, train_loader)
+        _, _, test_acc = test(net, test_loader)
 
-        print(f'Epoch: {epoch} | Loss: {loss}')
+        print(f'Epoch: {epoch} | Loss: {loss} | Train Acc: {train_acc} | Test Acc: {test_acc}')
 
     return net
 
@@ -296,14 +303,19 @@ def test(net, test_loader):
             actual.extend(list(labels.to(dtype=torch.int64)))
 
     acc = 100*correct/total
-    print(f'Accuracy: {acc}')
+    # print(f'Accuracy: {acc}')
     return preds, actual, acc
 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-k_fold = 5
+k_fold = 1
+params.nEpochs = 10
 accs = []
 cf_matrix = []
+learning_rate = 0.0001
+
+print(f'Parameters: LR: {learning_rate} | Epochs: {params.nEpochs} |K-folds: {k_fold}')
+
 for k in range(k_fold):
     train_subs, test_subs = train_test_subs(test_pct=0.2)
     # print(f'Train-subs: {len(train_subs)}')
@@ -324,16 +336,16 @@ for k in range(k_fold):
         net = nn.DataParallel(net, list(range(n_gpus)))
 
     loss_function = nn.CrossEntropyLoss(weight=class_weights)
-    optimizer = optim.Adam(net.parameters(), lr=0.001)
+    optimizer = optim.Adam(net.parameters(), lr=learning_rate)
 
     train_loader = DataLoader(
-        trainset, batch_size=params.batchSize, shuffle=True)
+        trainset, batch_size=params.batchSize, shuffle=True, collate_fn=my_collate)
     test_loader = DataLoader(
-        testset, batch_size=params.batchSize, shuffle=True)
+        testset, batch_size=params.batchSize, shuffle=True, collate_fn=my_collate)
     
     # You can use my_collate() function inside the dataloader to check for errors while reading corrupted scans
 
-    net = train(net, train_loader, loss_function, optimizer)
+    net = train(net, train_loader, loss_function, optimizer, test_loader)
     # Save the model checkpoint
     current_time = datetime.now()
     current_time = current_time.strftime("%m%d%Y%H_%M")
@@ -354,6 +366,7 @@ for k in range(k_fold):
 print(cf_matrix)
 print(accs)
 print(f'Avg Accuracy: {sum(accs)/len(accs)}')
+print(f'Learning rate used: {learning_rate}')
 
 with open('abc.txt', 'w') as abc_file:
     for cf in cf_matrix:
