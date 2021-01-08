@@ -28,89 +28,152 @@ from torchvision import transforms, utils
 
 from tqdm import tqdm
 
-
 # Custom import
 from train_test_set import train_test_subs, params
 
 
-class FmriModel(nn.Module):
+def conv2D_output_size(img_size, padding, kernel_size, stride):
+    # compute output shape of conv2D
+    outshape = (np.floor((img_size[0] + 2 * padding[0] - (kernel_size[0] - 1) - 1) / stride[0] + 1).astype(int),
+                np.floor((img_size[1] + 2 * padding[1] - (kernel_size[1] - 1) - 1) / stride[1] + 1).astype(int))
+    return outshape
 
-    def __init__(self, params):
-        super(FmriModel, self).__init__()
 
-        self.ndf = params.ndf
-        # "nc" is the number of timesteps in the input scan (t=nc in this case)
-        self.nc = params.img_timesteps
-        self.nClass = params.nClass
+# 2D CNN encoder train from scratch (no transfer learning)
+class EncoderCNN(nn.Module):
+    def __init__(self, img_x=68, img_y=49, fc_hidden1=512, fc_hidden2=512, drop_p=0.3, CNN_embed_dim=300):
+        super(EncoderCNN, self).__init__()
 
-        # Input to the model is (t, 57, 68, 49) <== (t, x, y, z)
-        # 't' can change based on the "img_timesteps" value (number of timesteps to be sampled from one scan)
+        self.img_x = img_x
+        self.img_y = img_y
+        inp_channels = 57
+        self.CNN_embed_dim = CNN_embed_dim
+
+        # CNN architechtures
+        self.ch1, self.ch2, self.ch3, self.ch4 = 32, 64, 128, 256
+        self.k1, self.k2, self.k3, self.k4 = (
+            5, 5), (3, 3), (3, 3), (3, 3)      # 2d kernal size
+        self.s1, self.s2, self.s3, self.s4 = (
+            2, 2), (2, 2), (2, 2), (2, 2)      # 2d strides
+        self.pd1, self.pd2, self.pd3, self.pd4 = (
+            0, 0), (0, 0), (0, 0), (0, 0)  # 2d padding
+
+        # conv2D output shapes
+        self.conv1_outshape = conv2D_output_size(
+            (self.img_x, self.img_y), self.pd1, self.k1, self.s1)  # Conv1 output shape
+        self.conv2_outshape = conv2D_output_size(
+            self.conv1_outshape, self.pd2, self.k2, self.s2)
+        self.conv3_outshape = conv2D_output_size(
+            self.conv2_outshape, self.pd3, self.k3, self.s3)
+        self.conv4_outshape = conv2D_output_size(
+            self.conv3_outshape, self.pd4, self.k4, self.s4)
+
+        # fully connected layer hidden nodes
+        self.fc_hidden1, self.fc_hidden2 = fc_hidden1, fc_hidden2
+        self.drop_p = drop_p
 
         self.conv1 = nn.Sequential(
-            nn.Conv2d(params.nX, self.ndf, 5, 2, bias=False),
-            nn.ReLU(True)
+            nn.Conv2d(in_channels=inp_channels, out_channels=self.ch1,
+                      kernel_size=self.k1, stride=self.s1, padding=self.pd1),
+            nn.BatchNorm2d(self.ch1, momentum=0.01),
+            nn.ReLU(inplace=True),
+            # nn.MaxPool2d(kernel_size=2),
         )
-
         self.conv2 = nn.Sequential(
-            nn.Conv2d(self.ndf*1, self.ndf*2, 5, 2, bias=False),
-            nn.BatchNorm2d(self.ndf*2),
-            nn.ReLU(True),
+            nn.Conv2d(in_channels=self.ch1, out_channels=self.ch2,
+                      kernel_size=self.k2, stride=self.s2, padding=self.pd2),
+            nn.BatchNorm2d(self.ch2, momentum=0.01),
+            nn.ReLU(inplace=True),
+            # nn.MaxPool2d(kernel_size=2),
         )
 
         self.conv3 = nn.Sequential(
-            nn.Conv2d(self.ndf*2, self.ndf*4, 5, 2, bias=False),
-            nn.BatchNorm2d(self.ndf*4),
-            nn.ReLU(True),
+            nn.Conv2d(in_channels=self.ch2, out_channels=self.ch3,
+                      kernel_size=self.k3, stride=self.s3, padding=self.pd3),
+            nn.BatchNorm2d(self.ch3, momentum=0.01),
+            nn.ReLU(inplace=True),
+            # nn.MaxPool2d(kernel_size=2),
         )
 
-        self._to_linear, self._to_lstm = None, None
-        x = torch.randn(params.batchSize*self.nc,
-                        params.nX, params.nY, params.nZ)
-        self.convs(x)
-
-        self.lstm = nn.LSTM(input_size=3840, hidden_size=256,
-                            num_layers=1, batch_first=True)
-
-        self.fc1 = nn.Linear(256, self.ndf * 1)
-
-        self.fc2 = nn.Sequential(
-            nn.Linear(self.ndf * 1, self.nClass),
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(in_channels=self.ch3, out_channels=self.ch4,
+                      kernel_size=self.k4, stride=self.s4, padding=self.pd4),
+            nn.BatchNorm2d(self.ch4, momentum=0.01),
+            nn.ReLU(inplace=True),
+            # nn.MaxPool2d(kernel_size=2),
         )
 
-    def convs(self, x):
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.conv3(x)
+        self.drop = nn.Dropout2d(self.drop_p)
+        self.pool = nn.MaxPool2d(2)
+        # fully connected layer, output k classes
+        self.fc1 = nn.Linear(
+            self.ch4 * self.conv4_outshape[0] * self.conv4_outshape[1], self.fc_hidden1)
+        self.fc2 = nn.Linear(self.fc_hidden1, self.fc_hidden2)
+        # output = CNN embedding latent variables
+        self.fc3 = nn.Linear(self.fc_hidden2, self.CNN_embed_dim)
 
-        if self._to_linear is None:
-            # First pass: done to know what the output of the convnet is
-            self._to_linear = int(x[0].shape[0]*x[0].shape[1]*x[0].shape[2])
-            # For LSTM input, divide by batch_size and time_steps (i.e. / by self.nc and 1)
-            self._to_lstm = int(self._to_linear/self.nc)
+    def forward(self, x_3d):
+        cnn_embed_seq = []
+        for t in range(x_3d.size(1)):
+            # CNNs
+            x = self.conv1(x_3d[:, t, :, :, :])
+            x = self.conv2(x)
+            x = self.conv3(x)
+            x = self.conv4(x)
+            x = x.view(x.size(0), -1)           # flatten the output of conv
+
+            # FC layers
+            x = F.relu(self.fc1(x))
+            # x = F.dropout(x, p=self.drop_p, training=self.training)
+            x = F.relu(self.fc2(x))
+            x = F.dropout(x, p=self.drop_p, training=self.training)
+            x = self.fc3(x)
+            cnn_embed_seq.append(x)
+
+        # swap time and sample dim such that (sample dim, time dim, CNN latent dim)
+        cnn_embed_seq = torch.stack(cnn_embed_seq, dim=0).transpose_(0, 1)
+        # cnn_embed_seq: shape=(batch, time_step, input_size)
+
+        return cnn_embed_seq
+
+
+class DecoderRNN(nn.Module):
+    def __init__(self, CNN_embed_dim=300, h_RNN_layers=3, h_RNN=256, h_FC_dim=128, drop_p=0.3, num_classes=6):
+        super(DecoderRNN, self).__init__()
+
+        self.RNN_input_size = CNN_embed_dim
+        self.h_RNN_layers = h_RNN_layers   # RNN hidden layers
+        self.h_RNN = h_RNN                 # RNN hidden nodes
+        self.h_FC_dim = h_FC_dim
+        self.drop_p = drop_p
+        self.num_classes = num_classes
+
+        self.LSTM = nn.LSTM(
+            input_size=self.RNN_input_size,
+            hidden_size=self.h_RNN,
+            num_layers=h_RNN_layers,
+            # input & output will has batch size as 1s dimension. e.g. (batch, time_step, input_size)
+            batch_first=True,
+        )
+
+        self.fc1 = nn.Linear(self.h_RNN, self.h_FC_dim)
+        self.fc2 = nn.Linear(self.h_FC_dim, self.num_classes)
+
+    def forward(self, x_RNN):
+
+        self.LSTM.flatten_parameters()
+        RNN_out, (h_n, h_c) = self.LSTM(x_RNN, None)
+        """ h_n shape (n_layers, batch, hidden_size), h_c shape (n_layers, batch, hidden_size) """
+        """ None represents zero initial hidden state. RNN_out has shape=(batch, time_step, output_size) """
+
+        # FC layers
+        # choose RNN_out at the last time step
+        x = self.fc1(RNN_out[:, -1, :])
+        x = F.relu(x)
+        x = F.dropout(x, p=self.drop_p, training=self.training)
+        x = self.fc2(x)
 
         return x
-
-    def forward(self, x):
-        batch_size, timesteps, c, h, w = x.size()
-        # Merge batch_size and timesteps into one dimension
-        x = x.view(batch_size*timesteps, c, h, w)
-        cnn_out = self.convs(x)
-
-        # Prepare the output from CNN to pass through the LSTM layer
-        r_in = cnn_out.view(batch_size, timesteps, -1)
-
-        # Flattening is required when we use DataParallel
-        self.lstm.flatten_parameters()
-
-        # Get output from the LSTM
-        r_out, (h_n, h_c) = self.lstm(r_in)
-
-        # Pass the output of the LSTM to FC layers
-        r_out = self.fc1(r_out[:, -1, :])
-        r_out = self.fc2(r_out)
-
-        # Apply softmax to the output and return it
-        return F.log_softmax(r_out, dim=1)
 
 
 class FmriDataset(Dataset):
@@ -249,13 +312,13 @@ class FmriDataset(Dataset):
 
         return weights
 
-    
+
 def my_collate(batch):
     # Function to catch errors while reading a batch of fMRI scans
     # Removes any NoneType values from the batch to prevent errors while training
     batch = list(filter(lambda x: x is not None, batch))
     return default_collate(batch)
-    
+
 
 def train_test_length(total, test_pct=0.2):
     train_count = int((1-test_pct)*total)
@@ -263,29 +326,31 @@ def train_test_length(total, test_pct=0.2):
     return train_count, test_count
 
 
-def train(net, train_loader, loss_function, optimizer, test_loader):
+def train(models, train_loader, loss_function, optimizer, test_loader):
     print('Training...')
+    cnn_encoder, rnn_decoder = models
+
     for epoch in range(params.nEpochs):
         for batch in tqdm(train_loader):
             inputs, labels = batch[0].to(device), batch[1].to(device)
             optimizer.zero_grad()
 
-            outputs = net(inputs)
+            outputs = rnn_decoder(cnn_encoder(inputs))
             loss = loss_function(outputs, labels)
             loss.backward()
             optimizer.step()
-            
-        
-        _, _, train_acc = test(net, train_loader)
-        _, _, test_acc = test(net, test_loader)
 
-        print(f'Epoch: {epoch} | Loss: {loss} | Train Acc: {train_acc} | Test Acc: {test_acc}')
+        _, _, train_acc = test(models, train_loader)
+        _, _, test_acc = test(models, test_loader)
 
-    return net
+        print(
+            f'Epoch: {epoch} | Loss: {loss} | Train Acc: {train_acc} | Test Acc: {test_acc}')
+
+    return [cnn_encoder, rnn_decoder]
 
 
-def test(net, test_loader):
-    # print('Testing...')
+def test(models, test_loader):
+    cnn_encoder, rnn_decoder = models
     correct = 0
     total = 0
 
@@ -298,11 +363,12 @@ def test(net, test_loader):
                 continue
             inputs, labels = data
             inputs, labels = inputs.to(device), labels.to(device)
-            class_outputs = net(inputs)
+            class_outputs = rnn_decoder(cnn_encoder(inputs))
             _, class_prediction = torch.max(class_outputs.data, 1)
             total += labels.size(0)
             correct += (class_prediction == labels).sum().item()
             preds.extend(list(class_prediction.to(dtype=torch.int64)))
+
             actual.extend(list(labels.to(dtype=torch.int64)))
 
     acc = 100*correct/total
@@ -313,51 +379,76 @@ def test(net, test_loader):
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 k_fold = 1
 params.nEpochs = 10
-params.batchSize = 8
 accs = []
 cf_matrix = []
-learning_rate = 0.0001
-sample_timesteps = 100
+learning_rate = 0.00001
+sample_timesteps = 30
 params.update({'img_timesteps': sample_timesteps})
 
 print(f'Parameters: LR: {learning_rate} | Epochs: {params.nEpochs} | K-folds: {k_fold} | BatchSize: {params.batchSize} | Sample timesteps: {sample_timesteps}')
 
+
+# Get training and testing subjects from the dataset
+train_subs, test_subs = train_test_subs(test_pct=0.2)
+
+# Add 'subs' key in the params to track which subjects to use to create both trainset and testset
+params.update({'subs': train_subs})
+trainset = FmriDataset(params=params)
+params.update({'subs': test_subs})
+testset = FmriDataset(params=params)
+
+# Identify the training set class weights based on their occurences in the training data
+class_weights = torch.FloatTensor(
+    [trainset.class_weights[i] for i in range(params.nClass)]).to(device)
+
+
 for k in range(k_fold):
+    # Split the train and validation sets
     train_subs, test_subs = train_test_subs(test_pct=0.2)
     print(f'Train subs: {train_subs} || Test subs: {test_subs}')
-    # print(f'Train-subs: {len(train_subs)}')
-    # print(f'Test-subs: {len(test_subs)}')
     params.update({'subs': train_subs})
     trainset = FmriDataset(params=params)
     params.update({'subs': test_subs})
     testset = FmriDataset(params=params)
 
+    # Get the class weights based on their number of instances
     class_weights = torch.FloatTensor(
         [trainset.class_weights[i] for i in range(params.nClass)]).to(device)
-    # Initialize the model
-    net = FmriModel(params=params).to(device)
+
+    # Initialize the models
+    cnn_encoder = EncoderCNN().to(device)
+    rnn_decoder = DecoderRNN().to(device)
+
     # Distributed training on multiple GPUs if available
     n_gpus = torch.cuda.device_count()
     print(f'Number of GPUs available: {n_gpus}')
     if (device.type == 'cuda') and (n_gpus > 1):
-        net = nn.DataParallel(net, list(range(n_gpus)))
+        cnn_encoder = nn.DataParallel(cnn_encoder)
+        rnn_decoder = nn.DataParallel(rnn_decoder)
 
     loss_function = nn.CrossEntropyLoss(weight=class_weights)
-    optimizer = optim.Adam(net.parameters(), lr=learning_rate)
 
+    crnn_params = list(cnn_encoder.parameters()) + \
+        list(rnn_decoder.parameters())
+    optimizer = torch.optim.Adam(crnn_params, lr=learning_rate)
+
+    # Prepare the train and validation loaders
     train_loader = DataLoader(
         trainset, batch_size=params.batchSize, shuffle=True, collate_fn=my_collate)
     test_loader = DataLoader(
         testset, batch_size=params.batchSize, shuffle=True, collate_fn=my_collate)
-    
-    # You can use my_collate() function inside the dataloader to check for errors while reading corrupted scans
 
-    net = train(net, train_loader, loss_function, optimizer, test_loader)
+    # You can use my_collate() function inside the dataloader to check for errors while reading corrupted scans
+    models = [cnn_encoder, rnn_decoder]
+    models = train(models, train_loader, loss_function, optimizer, test_loader)
+
     # Save the model checkpoint
-    current_time = datetime.now()
-    current_time = current_time.strftime("%m_%d_%Y_%H_%M")
-    torch.save(net.state_dict(), f'{current_time}-fold-{k}-lr-{learning_rate}.pth')
-    preds, actual, acc = test(net, test_loader)
+#     current_time = datetime.now()
+#     current_time = current_time.strftime("%m%d%Y%H_%M")
+#     torch.save(net.state_dict(), f'{current_time}-scans-5-fold-{k}.pth')
+
+    # Test the model
+    preds, actual, acc = test(models, test_loader)
     accs.append(acc)
 
     # For confusion matrix
