@@ -64,11 +64,11 @@ class FmriModel(nn.Module):
         )
 
         self._to_linear, self._to_lstm = None, None
-        x = torch.randn(params.batchSize*self.nc,
+        x = torch.randn(params.batchSize, self.nc,
                         params.nX, params.nY, params.nZ)
         self.convs(x)
 
-        self.lstm = nn.LSTM(input_size=47104, hidden_size=256,
+        self.lstm = nn.LSTM(input_size=self._to_lstm, hidden_size=256,
                             num_layers=1, batch_first=True)
 
         self.fc1 = nn.Linear(256, self.ndf * 1)
@@ -78,6 +78,8 @@ class FmriModel(nn.Module):
         )
 
     def convs(self, x):
+        batch_size, timesteps, c, h, w = x.size()
+        x = x.view(batch_size*timesteps, c, h, w)
         x = self.conv1(x)
         # x = self.conv2(x)
         # x = self.conv3(x)
@@ -85,15 +87,14 @@ class FmriModel(nn.Module):
         if self._to_linear is None:
             # First pass: done to know what the output of the convnet is
             self._to_linear = int(x[0].shape[0]*x[0].shape[1]*x[0].shape[2])
-            # For LSTM input, divide by batch_size and time_steps (i.e. / by self.nc and 1)
-            self._to_lstm = int(self._to_linear/self.nc)
+            r_in = x.view(batch_size, timesteps, -1)
+            #print(r_in.shape)
+            self._to_lstm = r_in.shape[2]
 
         return x
 
     def forward(self, x):
         batch_size, timesteps, c, h, w = x.size()
-        # Merge batch_size and timesteps into one dimension
-        x = x.view(batch_size*timesteps, c, h, w)
         cnn_out = self.convs(x)
 
         # Prepare the output from CNN to pass through the LSTM layer
