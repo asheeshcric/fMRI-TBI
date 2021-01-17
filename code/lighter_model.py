@@ -47,18 +47,18 @@ class FmriModel(nn.Module):
         # 't' can change based on the "img_timesteps" value (number of timesteps to be sampled from one scan)
 
         self.conv1 = nn.Sequential(
-            nn.Conv2d(params.nX, self.ndf, 5, 2, bias=False),
+            nn.Conv2d(params.nX, self.ndf, 3, 2, bias=False),
             nn.ReLU(True)
         )
 
         self.conv2 = nn.Sequential(
-            nn.Conv2d(self.ndf*1, self.ndf*2, 5, 2, bias=False),
+            nn.Conv2d(self.ndf*1, self.ndf*2, 3, 2, bias=False),
             nn.BatchNorm2d(self.ndf*2),
             nn.ReLU(True),
         )
 
         self.conv3 = nn.Sequential(
-            nn.Conv2d(self.ndf*2, self.ndf*4, 5, 2, bias=False),
+            nn.Conv2d(self.ndf*2, self.ndf*4, 3, 2, bias=False),
             nn.BatchNorm2d(self.ndf*4),
             nn.ReLU(True),
         )
@@ -68,10 +68,10 @@ class FmriModel(nn.Module):
                         params.nX, params.nY, params.nZ)
         self.convs(x)
 
-        self.lstm = nn.LSTM(input_size=self._to_lstm, hidden_size=256,
+        self.lstm = nn.LSTM(input_size=self._to_lstm, hidden_size=128,
                             num_layers=1, batch_first=True)
 
-        self.fc1 = nn.Linear(256, self.ndf * 1)
+        self.fc1 = nn.Linear(128, self.ndf * 1)
 
         self.fc2 = nn.Sequential(
             nn.Linear(self.ndf * 1, self.nClass),
@@ -318,7 +318,7 @@ params.batchSize = 8
 accs = []
 cf_matrix = []
 learning_rate = 0.0001
-sample_timesteps = 100
+sample_timesteps = 135
 params.update({'img_timesteps': sample_timesteps})
 
 print(f'Parameters: LR: {learning_rate} | Epochs: {params.nEpochs} | K-folds: {k_fold} | BatchSize: {params.batchSize} | Sample timesteps: {sample_timesteps}')
