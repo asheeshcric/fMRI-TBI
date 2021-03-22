@@ -1,3 +1,8 @@
+trained_models/
+error.txt
+cf_matrices.txt
+.gitignore.save
+
 *.swp
 
 # Byte-compiled / optimized / DLL files
