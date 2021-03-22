@@ -276,7 +276,7 @@ def train(net, train_loader, loss_function, optimizer, test_loader):
             loss.backward()
             optimizer.step()
             
-        
+        print('Validating...')
         _, _, train_acc = test(net, train_loader)
         _, _, test_acc = test(net, test_loader)
 
