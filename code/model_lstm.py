@@ -119,7 +119,7 @@ class Custom3D(nn.Module):
         x = torch.randn(params.batchSize*self.nc, params.nX, params.nY, params.nZ)
         self.convs(x)
         
-        self.lstm = nn.LSTM(input_size=3840, hidden_size=256, num_layers=1, batch_first=True)
+        self.lstm = nn.LSTM(input_size=1920, hidden_size=256, num_layers=1, batch_first=True)
         
         self.fc1 = nn.Linear(256, self.ndf * 1)
 
