@@ -99,6 +99,20 @@ if __name__ == '__main__':
             testset, batch_size=params.batchSize, shuffle=True)
 
         net = train(net, train_loader, loss_function, optimizer)
+        
+        # Load state dict code (for testing only)
+        """
+        state_dict = torch.load('0321202122_20-scans-5-fold-0.pth')
+        print(state_dict.keys())
+        from collections import OrderedDict
+        new_state_dict = OrderedDict()
+        for key, value in state_dict.items():
+            if 'module' in key:
+                key = key[7:] # remove the keyword "module" from all the keys
+            new_state_dict[key] = value
+        net.load_state_dict(new_state_dict)
+        """
+        
         # Save the model checkpoint
         current_time = datetime.now()
         current_time = current_time.strftime("%m%d%Y%H_%M")
