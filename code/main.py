@@ -76,9 +76,9 @@ if __name__ == '__main__':
         # print(train_subs)
         # print(test_subs)
         params.update({'subs': train_subs})
-        trainset = FmriDataset(params=params)
-        params.update({'subs': train_subs})
-        testset = FmriDataset(params=params)
+        trainset = FmriDataset(params=params, img_timesteps=85)
+        params.update({'subs': test_subs})
+        testset = FmriDataset(params=params, img_timesteps=85)
 
         class_weights = torch.FloatTensor(
             [trainset.class_weights[i] for i in range(params.nClass)]).to(device)
