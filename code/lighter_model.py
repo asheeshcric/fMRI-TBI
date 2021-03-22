@@ -339,7 +339,7 @@ for k in range(k_fold):
     net = FmriModel(params=params).to(device)
     # Distributed training on multiple GPUs if available
     n_gpus = torch.cuda.device_count()
-    print(f'Number of GPUs available: {n_gpus}')
+    print(f'Number of GPUs avail0able: {n_gpus}')
     if (device.type == 'cuda') and (n_gpus > 1):
         net = nn.DataParallel(net, list(range(n_gpus)))
 

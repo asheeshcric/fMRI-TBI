@@ -1,5 +1,6 @@
 import os
 import nilearn as nil
+from nilearn import image as nil_image
 import numpy as np
 import random
 import torch
@@ -93,15 +94,19 @@ class FmriDataset(Dataset):
     
     def read_image(self, img_path):
         nX, nY, nZ, nT = self.img_shape
-        img = nil.image.load_img(img_path)
-        img = img.get_fdata()[:nX, :nY, :nZ, :nT]
+        try:
+            img = nil_image.load_img(img_path)
+            img = img.get_fdata()[:nX, :nY, :nZ, :nT]
+        except Exception as error:
+            print(error)
+            print(img_path)
         img = torch.tensor(img, dtype=torch.float, device=self.device)
         img = (img - img.mean()) / img.std()
         return img
     
     def read_mask(self):
         nX, nY, nZ, _ = self.img_shape
-        mask_img = nil.image.load_img(self.mask_path)
+        mask_img = nil_image.load_img(self.mask_path)
         mask_img = mask_img.get_fdata()[:]
         mask_img = np.asarray(mask_img)
         dilated_mask = np.zeros((nX, nY, nZ))
