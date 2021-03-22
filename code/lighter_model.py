@@ -205,7 +205,7 @@ class FmriDataset(Dataset):
 
     def read_mask(self):
         nX, nY, nZ, _ = self.img_shape
-        mask_img = nil.image.load_img(self.mask_path)
+        mask_img = nil_image.load_img(self.mask_path)
         mask_img = mask_img.get_fdata()[:]
         mask_img = np.asarray(mask_img)
         dilated_mask = np.zeros((nX, nY, nZ))
@@ -318,14 +318,14 @@ params.batchSize = 8
 accs = []
 cf_matrix = []
 learning_rate = 0.0001
-sample_timesteps = 135
+sample_timesteps = 85
 params.update({'img_timesteps': sample_timesteps})
 
 print(f'Parameters: LR: {learning_rate} | Epochs: {params.nEpochs} | K-folds: {k_fold} | BatchSize: {params.batchSize} | Sample timesteps: {sample_timesteps}')
 
 for k in range(k_fold):
     train_subs, test_subs = train_test_subs(test_pct=0.2)
-    print(f'Train subs: {train_subs} || Test subs: {test_subs}')
+    print(f'\nTrain subs: {train_subs} \n\nTest subs: {test_subs}')
     # print(f'Train-subs: {len(train_subs)}')
     # print(f'Test-subs: {len(test_subs)}')
     params.update({'subs': train_subs})
@@ -347,9 +347,9 @@ for k in range(k_fold):
     optimizer = optim.Adam(net.parameters(), lr=learning_rate)
 
     train_loader = DataLoader(
-        trainset, batch_size=params.batchSize, shuffle=True, collate_fn=my_collate)
+        trainset, batch_size=params.batchSize, shuffle=True)
     test_loader = DataLoader(
-        testset, batch_size=params.batchSize, shuffle=True, collate_fn=my_collate)
+        testset, batch_size=params.batchSize, shuffle=True)
     
     # You can use my_collate() function inside the dataloader to check for errors while reading corrupted scans
 
