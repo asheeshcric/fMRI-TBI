@@ -48,6 +48,7 @@ class FmriModel(nn.Module):
 
         self.conv1 = nn.Sequential(
             nn.Conv2d(params.nX, self.ndf, 3, 2, bias=False),
+            nn.BatchNorm2d(self.ndf),
             nn.ReLU(True)
         )
 
@@ -117,7 +118,7 @@ class FmriModel(nn.Module):
 class FmriDataset(Dataset):
 
     def __init__(self, params, data_dir='/data/fmri/data', mask_path='/data/fmri/mask/caudate._mask.nii',
-                 img_shape=(57, 68, 49, 135)):
+                 img_shape=(57, 68, 49, 135), transform=None):
         self.data_dir, self.params = data_dir, params
         self.img_timesteps = params.img_timesteps
         self.num_classes = params.nClass
@@ -125,6 +126,7 @@ class FmriDataset(Dataset):
             "cuda:0" if torch.cuda.is_available() else "cpu")
         self.mask_path, self.img_shape = mask_path, img_shape
         self.samples = []
+        self.transform = transform
         # Initialize the image indexes with their scores
         self.index_data()
         # self.mask = self.read_mask()

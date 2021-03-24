@@ -19,7 +19,7 @@ params = edict({
         'nY': 68,
         'nZ': 49,
         'nDivT': 9,
-        'ndf': 32,
+        'ndf': 16,
         'lr': 0.001,
         'beta1': 0.5,
         'beta2': 0.999
@@ -28,15 +28,28 @@ params = edict({
 def get_counts(test_pct):
     hc_subs = [1, 2, 3, 4, 5, 7, 9, 10, 11, 12, 16, 19, 20, 21, 22, 23, 24, 25, 28, 29, 30, 31, 33]
     tbi_subs = [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 23, 24, 25, 27, 29, 30, 34, 35, 36]
-    total_subs = len(hc_subs) + len(tbi_subs)
-    test_count = int(total_subs*test_pct)
-    train_count = total_subs - test_count
-    # Randomly sample subjects for train and test sets
-    hc_train = random.sample(hc_subs, train_count//2)
-    hc_test = list(set(hc_subs) - set(hc_train))
-    tbi_train = random.sample(tbi_subs, (train_count-train_count//2))
-    tbi_test = list(set(tbi_subs) - set(tbi_train))
+    
+    test_hc_count = int(len(hc_subs)*test_pct)
+    test_tbi_count = int(len(tbi_subs)*test_pct)
+    hc_test = random.sample(hc_subs, test_hc_count)
+    tbi_test = random.sample(tbi_subs, test_tbi_count)
+    hc_train = list(set(hc_subs) - set(hc_test))
+    tbi_train = list(set(tbi_subs) - set(tbi_test))
+    
     return hc_train, hc_test, tbi_train, tbi_test
+
+# def get_counts(test_pct):
+#     hc_subs = [1, 2, 3, 4, 5, 7, 9, 10, 11, 12, 16, 19, 20, 21, 22, 23, 24, 25, 28, 29, 30, 31, 33]
+#     tbi_subs = [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 23, 24, 25, 27, 29, 30, 34, 35, 36]
+#     total_subs = len(hc_subs) + len(tbi_subs)
+#     test_count = int(total_subs*test_pct)
+#     train_count = total_subs - test_count
+#     # Randomly sample subjects for train and test sets
+#     hc_train = random.sample(hc_subs, train_count//2)
+#     hc_test = list(set(hc_subs) - set(hc_train))
+#     tbi_train = random.sample(tbi_subs, (train_count-train_count//2))
+#     tbi_test = list(set(tbi_subs) - set(tbi_train))
+#     return hc_train, hc_test, tbi_train, tbi_test
 
 def train_test_subs(test_pct=0.2):
     hc_train, hc_test, tbi_train, tbi_test = get_counts(test_pct)
