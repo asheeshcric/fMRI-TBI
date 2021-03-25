@@ -19,7 +19,7 @@ params = edict({
         'nY': 68,
         'nZ': 49,
         'nDivT': 9,
-        'ndf': 16,
+        'ndf': 8,
         'lr': 0.001,
         'beta1': 0.5,
         'beta2': 0.999

@@ -47,7 +47,7 @@ class FmriModel(nn.Module):
         # 't' can change based on the "img_timesteps" value (number of timesteps to be sampled from one scan)
 
         self.conv1 = nn.Sequential(
-            nn.Conv2d(params.nX, self.ndf, 3, 2, bias=False),
+            nn.Conv2d(params.nX, self.ndf, kernel_size=3, stride=1, bias=False),
             nn.BatchNorm2d(self.ndf),
             nn.ReLU(True)
         )
@@ -72,11 +72,11 @@ class FmriModel(nn.Module):
         self.lstm = nn.LSTM(input_size=self._to_lstm, hidden_size=128,
                             num_layers=1, batch_first=True)
 
-        self.fc1 = nn.Linear(128, self.ndf * 1)
+        self.fc1 = nn.Linear(128, self.nClass)
 
-        self.fc2 = nn.Sequential(
-            nn.Linear(self.ndf * 1, self.nClass),
-        )
+#         self.fc2 = nn.Sequential(
+#             nn.Linear(self.ndf * 1, self.nClass),
+#         )
 
     def convs(self, x):
         batch_size, timesteps, c, h, w = x.size()
@@ -109,7 +109,7 @@ class FmriModel(nn.Module):
 
         # Pass the output of the LSTM to FC layers
         r_out = self.fc1(r_out[:, -1, :])
-        r_out = self.fc2(r_out)
+        # r_out = self.fc2(r_out)
 
         # Apply softmax to the output and return it
         return F.log_softmax(r_out, dim=1)
@@ -198,11 +198,14 @@ class FmriDataset(Dataset):
         return scores[score_num]
 
     def read_image(self, img_path):
-        nX, nY, nZ, nT = self.img_shape
-        img = nil_image.load_img(img_path)
-        img = img.get_fdata()[:nX, :nY, :nZ, :nT]
-        img = torch.tensor(img, dtype=torch.float, device=self.device)
-        img = (img - img.mean()) / img.std()
+        try:
+            nX, nY, nZ, nT = self.img_shape
+            img = nil_image.load_img(img_path)
+            img = img.get_fdata()[:nX, :nY, :nZ, :nT]
+            img = torch.tensor(img, dtype=torch.float, device=self.device)
+            img = (img - img.mean()) / img.std()
+        except Exception as error:
+            print(img_path)
         return img
 
     def read_mask(self):
