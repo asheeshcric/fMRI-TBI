@@ -69,10 +69,10 @@ class FmriModel(nn.Module):
                         params.nX, params.nY, params.nZ)
         self.convs(x)
 
-        self.lstm = nn.LSTM(input_size=self._to_lstm, hidden_size=128,
+        self.lstm = nn.LSTM(input_size=self._to_lstm, hidden_size=64,
                             num_layers=1, batch_first=True)
 
-        self.fc1 = nn.Linear(128, self.nClass)
+        self.fc1 = nn.Linear(64, self.nClass)
 
 #         self.fc2 = nn.Sequential(
 #             nn.Linear(self.ndf * 1, self.nClass),
