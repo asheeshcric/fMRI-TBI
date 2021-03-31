@@ -38,7 +38,7 @@ class FmriModel(nn.Module):
     def __init__(self, params):
         super(FmriModel, self).__init__()
 
-        self.ndf = params.ndf
+        self.conv_channels = params.conv_channels
         # "nc" is the number of timesteps in the input scan (t=nc in this case)
         self.nc = params.img_timesteps
         self.nClass = params.nClass
@@ -47,21 +47,9 @@ class FmriModel(nn.Module):
         # 't' can change based on the "img_timesteps" value (number of timesteps to be sampled from one scan)
 
         self.conv1 = nn.Sequential(
-            nn.Conv2d(params.nX, self.ndf, kernel_size=3, stride=1, bias=False),
-            nn.BatchNorm2d(self.ndf),
+            nn.Conv2d(params.nX, self.conv_channels, kernel_size=3, stride=1, bias=False),
+            nn.BatchNorm2d(self.conv_channels),
             nn.ReLU(True)
-        )
-
-        self.conv2 = nn.Sequential(
-            nn.Conv2d(self.ndf*1, self.ndf*2, 3, 2, bias=False),
-            nn.BatchNorm2d(self.ndf*2),
-            nn.ReLU(True),
-        )
-
-        self.conv3 = nn.Sequential(
-            nn.Conv2d(self.ndf*2, self.ndf*4, 3, 2, bias=False),
-            nn.BatchNorm2d(self.ndf*4),
-            nn.ReLU(True),
         )
 
         self._to_linear, self._to_lstm = None, None
@@ -69,21 +57,19 @@ class FmriModel(nn.Module):
                         params.nX, params.nY, params.nZ)
         self.convs(x)
 
-        self.lstm = nn.LSTM(input_size=self._to_lstm, hidden_size=64,
+        self.lstm = nn.LSTM(input_size=self._to_lstm, hidden_size=params.rnn_hidden_size,
                             num_layers=1, batch_first=True)
 
-        self.fc1 = nn.Linear(64, self.nClass)
+        self.fc1 = nn.Linear(params.rnn_hidden_size, self.nClass)
 
 #         self.fc2 = nn.Sequential(
-#             nn.Linear(self.ndf * 1, self.nClass),
+#             nn.Linear(self.conv_channels * 1, self.nClass),
 #         )
 
     def convs(self, x):
         batch_size, timesteps, c, h, w = x.size()
         x = x.view(batch_size*timesteps, c, h, w)
         x = self.conv1(x)
-        # x = self.conv2(x)
-        # x = self.conv3(x)
 
         if self._to_linear is None:
             # First pass: done to know what the output of the convnet is
@@ -117,7 +103,7 @@ class FmriModel(nn.Module):
 
 class FmriDataset(Dataset):
 
-    def __init__(self, params, data_dir='/data/fmri/data', mask_path='/data/fmri/mask/caudate._mask.nii',
+    def __init__(self, params, data_dir='/data/fmri/data', mask_path='/data/fmri/mask/caudate_mask.nii',
                  img_shape=(57, 68, 49, 135), transform=None):
         self.data_dir, self.params = data_dir, params
         self.img_timesteps = params.img_timesteps
