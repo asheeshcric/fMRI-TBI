@@ -22,12 +22,12 @@ params = edict({
         'lr': 0.001,
         'beta1': 0.5,
         'beta2': 0.999,
-        'ndf': 16,
+        'conv_channels': 16,
         'rnn_hidden_size': 128,
-        'mask_type': 'caudate_mask.nii',
+        #'mask_type': 'caudate_mask.nii',
         #'mask_type': 'insula_mask.nii.gz',
         #'mask_type': 'MFG_mask.nii.gz',
-        #'mask_type': 'medialPFC_mask.nii.gz',
+        'mask_type': 'medialPFC_mask.nii.gz',
 })
 
 def get_counts(test_pct):

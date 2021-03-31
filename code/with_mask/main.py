@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import argparse
 import math
 import os
 import random
@@ -38,7 +39,7 @@ class FmriModel(nn.Module):
     def __init__(self, params):
         super(FmriModel, self).__init__()
 
-        self.ndf = params.ndf
+        self.conv_channels = params.conv_channels
         # "nc" is the number of timesteps in the input scan (t=nc in this case)
         self.nc = params.img_timesteps
         self.nClass = params.nClass
@@ -47,21 +48,9 @@ class FmriModel(nn.Module):
         # 't' can change based on the "img_timesteps" value (number of timesteps to be sampled from one scan)
 
         self.conv1 = nn.Sequential(
-            nn.Conv2d(params.nX, self.ndf, kernel_size=3, stride=1, bias=False),
-            nn.BatchNorm2d(self.ndf),
+            nn.Conv2d(params.nX, self.conv_channels, kernel_size=3, stride=1, bias=False),
+            nn.BatchNorm2d(self.conv_channels),
             nn.ReLU(True)
-        )
-
-        self.conv2 = nn.Sequential(
-            nn.Conv2d(self.ndf*1, self.ndf*2, 3, 2, bias=False),
-            nn.BatchNorm2d(self.ndf*2),
-            nn.ReLU(True),
-        )
-
-        self.conv3 = nn.Sequential(
-            nn.Conv2d(self.ndf*2, self.ndf*4, 3, 2, bias=False),
-            nn.BatchNorm2d(self.ndf*4),
-            nn.ReLU(True),
         )
 
         self._to_linear, self._to_lstm = None, None
@@ -75,15 +64,13 @@ class FmriModel(nn.Module):
         self.fc1 = nn.Linear(params.rnn_hidden_size, self.nClass)
 
 #         self.fc2 = nn.Sequential(
-#             nn.Linear(self.ndf * 1, self.nClass),
+#             nn.Linear(self.conv_channels * 1, self.nClass),
 #         )
 
     def convs(self, x):
         batch_size, timesteps, c, h, w = x.size()
         x = x.view(batch_size*timesteps, c, h, w)
         x = self.conv1(x)
-        # x = self.conv2(x)
-        # x = self.conv3(x)
 
         if self._to_linear is None:
             # First pass: done to know what the output of the convnet is
@@ -117,15 +104,14 @@ class FmriModel(nn.Module):
 
 class FmriDataset(Dataset):
 
-    def __init__(self, params, data_dir='/data/fmri/data',
-                 img_shape=(57, 68, 49, 135), transform=None):
+    def __init__(self, params, data_dir='/data/fmri/data', img_shape=(57, 68, 49, 135), transform=None):
         self.data_dir, self.params = data_dir, params
         self.img_timesteps = params.img_timesteps
         self.num_classes = params.nClass
         self.device = torch.device(
             "cuda:0" if torch.cuda.is_available() else "cpu")
-        self.mask_path = f'/data/fmri/mask/{params.mask_type}' 
         self.img_shape = img_shape
+        self.mask_path = f'/data/fmri/mask/{params.mask_type}'
         self.samples = []
         self.transform = transform
         # Initialize the image indexes with their scores
@@ -317,74 +303,82 @@ def test(net, test_loader):
     return preds, actual, acc
 
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-k_fold = 1
-params.nEpochs = 10
-params.batchSize = 8
-accs = []
-cf_matrix = []
-learning_rate = 0.0001
-sample_timesteps = 85
-params.update({'img_timesteps': sample_timesteps})
-
-print(f'Parameters: LR: {learning_rate} | Epochs: {params.nEpochs} | K-folds: {k_fold} | BatchSize: {params.batchSize} | Sample timesteps: {sample_timesteps}')
-
-for k in range(k_fold):
-    train_subs, test_subs = train_test_subs(test_pct=0.2)
-    print(f'\nTrain subs: {train_subs} \n\nTest subs: {test_subs}')
-    # print(f'Train-subs: {len(train_subs)}')
-    # print(f'Test-subs: {len(test_subs)}')
-    params.update({'subs': train_subs})
-    trainset = FmriDataset(params=params)
-    params.update({'subs': test_subs})
-    testset = FmriDataset(params=params)
-
-    class_weights = torch.FloatTensor(
-        [trainset.class_weights[i] for i in range(params.nClass)]).to(device)
-    # Initialize the model
-    net = FmriModel(params=params).to(device)
-    # Distributed training on multiple GPUs if available
-    n_gpus = torch.cuda.device_count()
-    print(f'Number of GPUs avail0able: {n_gpus}')
-    if (device.type == 'cuda') and (n_gpus > 1):
-        net = nn.DataParallel(net, list(range(n_gpus)))
-
-    loss_function = nn.CrossEntropyLoss(weight=class_weights)
-    optimizer = optim.Adam(net.parameters(), lr=learning_rate)
-
-    train_loader = DataLoader(
-        trainset, batch_size=params.batchSize, shuffle=True)
-    test_loader = DataLoader(
-        testset, batch_size=params.batchSize, shuffle=True)
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='fMRI training for fatigue prediction')
+    parser.add_argument('--mask_type', type=str, default='caudate_mask.nii', help="'caudate_mask.nii' | 'insula_mask.nii.gz' | 'MFG_mask.nii.gz' | 'medialPFC_mask.nii.gz'")
     
-    # You can use my_collate() function inside the dataloader to check for errors while reading corrupted scans
+    args = parser.parse_args()
+    params.mask_type = args.mask_type
+    
+    print(f'Using mask type: {params.mask_type}')
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    k_fold = 1
+    params.nEpochs = 10
+    params.batchSize = 8
+    accs = []
+    cf_matrix = []
+    learning_rate = 0.0001
+    sample_timesteps = 85
+    params.update({'img_timesteps': sample_timesteps})
 
-    net = train(net, train_loader, loss_function, optimizer, test_loader)
-    # Save the model checkpoint
-    current_time = datetime.now()
-    current_time = current_time.strftime("%m_%d_%Y_%H_%M")
-    torch.save(net.state_dict(), f'{current_time}-fold-{k}-lr-{learning_rate}.pth')
-    preds, actual, acc = test(net, test_loader)
-    accs.append(acc)
+    print(f'Parameters: LR: {learning_rate} | Epochs: {params.nEpochs} | K-folds: {k_fold} | BatchSize: {params.batchSize} | Sample timesteps: {sample_timesteps}')
 
-    # For confusion matrix
-    preds = [int(k) for k in preds]
-    actual = [int(k) for k in actual]
+    for k in range(k_fold):
+        train_subs, test_subs = train_test_subs(test_pct=0.2)
+        print(f'\nTrain subs: {train_subs} \n\nTest subs: {test_subs}')
+        # print(f'Train-subs: {len(train_subs)}')
+        # print(f'Test-subs: {len(test_subs)}')
+        params.update({'subs': train_subs})
+        trainset = FmriDataset(params=params)
+        params.update({'subs': test_subs})
+        testset = FmriDataset(params=params)
 
-    cf = confusion_matrix(actual, preds, labels=list(range(params.nClass)))
-    cf_matrix.append(cf)
-    with open('cf_matrices.txt', 'a') as cf_file:
-        cf_file.write(str(cf) + '\n')
+        class_weights = torch.FloatTensor(
+            [trainset.class_weights[i] for i in range(params.nClass)]).to(device)
+        # Initialize the model
+        net = FmriModel(params=params).to(device)
+        # Distributed training on multiple GPUs if available
+        n_gpus = torch.cuda.device_count()
+        print(f'Number of GPUs available: {n_gpus}')
+        if (device.type == 'cuda') and (n_gpus > 1):
+            net = nn.DataParallel(net, list(range(n_gpus)))
+
+        loss_function = nn.CrossEntropyLoss(weight=class_weights)
+        optimizer = optim.Adam(net.parameters(), lr=learning_rate)
+
+        train_loader = DataLoader(
+            trainset, batch_size=params.batchSize, shuffle=True)
+        test_loader = DataLoader(
+            testset, batch_size=params.batchSize, shuffle=True)
+
+        # You can use my_collate() function inside the dataloader to check for errors while reading corrupted scans
+
+        net = train(net, train_loader, loss_function, optimizer, test_loader)
+        # Save the model checkpoint
+        current_time = datetime.now()
+        current_time = current_time.strftime("%m_%d_%Y_%H_%M")
+        torch.save(net.state_dict(), f'{current_time}-fold-{k}-lr-{learning_rate}.pth')
+        preds, actual, acc = test(net, test_loader)
+        accs.append(acc)
+
+        # For confusion matrix
+        preds = [int(k) for k in preds]
+        actual = [int(k) for k in actual]
+
+        cf = confusion_matrix(actual, preds, labels=list(range(params.nClass)))
+        cf_matrix.append(cf)
+        with open('cf_matrices.txt', 'a') as cf_file:
+            cf_file.write(str(cf) + '\n')
 
 
-print(cf_matrix)
-print(accs)
-print(f'Avg Accuracy: {sum(accs)/len(accs)}')
-print(f'Parameters: LR: {learning_rate} | Epochs: {params.nEpochs} | K-folds: {k_fold} | BatchSize: {params.batchSize} | Sample timesteps: {sample_timesteps}')
+    print(cf_matrix)
+    print(accs)
+    print(f'Avg Accuracy: {sum(accs)/len(accs)}')
+    print(f'Parameters: LR: {learning_rate} | Epochs: {params.nEpochs} | K-folds: {k_fold} | BatchSize: {params.batchSize} | Sample timesteps: {sample_timesteps}')
 
-print(f'Train subs: {train_subs} || Test subs: {test_subs}')
+    print(f'Train subs: {train_subs} || Test subs: {test_subs}')
 
-with open('abc.txt', 'w') as abc_file:
-    for cf in cf_matrix:
-        abc_file.write(f'{cf}\n')
-    abc_file.write(f'{accs}')
+    with open('abc.txt', 'w') as abc_file:
+        for cf in cf_matrix:
+            abc_file.write(f'{cf}\n')
+        abc_file.write(f'{accs}')
