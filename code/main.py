@@ -31,6 +31,7 @@ from tqdm import tqdm
 
 # Custom import
 from train_test_set import train_test_subs, params
+import custom_transforms as c_transforms
 
 
 class FmriModel(nn.Module):
@@ -122,15 +123,16 @@ class FmriDataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, idx):
-        try:
-            img_path, score = self.samples[idx]
-            score = self.get_class(score)
-            img = self.read_image(img_path)
-            # img = self.apply_mask(img)
-            img = self.apply_temporal_aug(img)
-            return img, score
-        except Exception:
-            return None
+        img_path, score = self.samples[idx]
+        score = self.get_class(score)
+        img = self.read_image(img_path)
+        # img = self.apply_mask(img)
+        img = self.apply_temporal_aug(img)
+
+        if self.transform:
+            img = self.transform(img)
+
+        return img, score
 
     def index_data(self):
         """
@@ -312,6 +314,9 @@ learning_rate = 0.0001
 sample_timesteps = 85
 params.update({'img_timesteps': sample_timesteps})
 
+# Apply transforms
+transform = c_transforms.Scale(factor=(0.7, 1.0))
+
 print(f'Parameters: LR: {learning_rate} | Epochs: {params.nEpochs} | K-folds: {k_fold} | BatchSize: {params.batchSize} | Sample timesteps: {sample_timesteps}')
 
 for k in range(k_fold):
@@ -320,9 +325,9 @@ for k in range(k_fold):
     # print(f'Train-subs: {len(train_subs)}')
     # print(f'Test-subs: {len(test_subs)}')
     params.update({'subs': train_subs})
-    trainset = FmriDataset(params=params)
+    trainset = FmriDataset(params=params, transform=transform)
     params.update({'subs': test_subs})
-    testset = FmriDataset(params=params)
+    testset = FmriDataset(params=params, transform=transform)
 
     class_weights = torch.FloatTensor(
         [trainset.class_weights[i] for i in range(params.nClass)]).to(device)

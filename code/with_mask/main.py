@@ -248,12 +248,6 @@ def my_collate(batch):
     # Removes any NoneType values from the batch to prevent errors while training
     batch = list(filter(lambda x: x is not None, batch))
     return default_collate(batch)
-    
-
-def train_test_length(total, test_pct=0.2):
-    train_count = int((1-test_pct)*total)
-    test_count = total - train_count
-    return train_count, test_count
 
 
 def train(net, train_loader, loss_function, optimizer, test_loader):
