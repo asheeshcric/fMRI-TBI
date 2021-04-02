@@ -1,4 +1,6 @@
 import os
+import random
+
 import numpy as np
 import torch
 import torchio as tio
@@ -32,15 +34,17 @@ class FmriDataset(Dataset):
         # Apply temporal augmentation
         img = self.apply_temporal_aug(img)
         
-    def read_img(self, img_path):
+        return img, score
+        
+    def read_image(self, img_path):
         img = tio.ScalarImage(img_path).data
         # Make sure that the dimensions are uniform
         nX, nY, nZ = self.params.nX, self.params.nY, self.params.nZ
         img = img[:nX, :nY, :nZ, :]
         if self.transform:
             img = self.transform(img)
-            
-        img = torch.tensor(img, dtype=torch.float, device=self.params.device)
+        
+        img = img.float().to(self.params.device)
         return img
     
     def apply_temporal_aug(self, img):
@@ -77,11 +81,11 @@ class FmriDataset(Dataset):
     def index_data(self):
         # For easy access of data through indices, store the paths in a list
         self.weights = {i: 0 for i in range(self.params.num_classes)}
-        for sub in os.listdir(self.params.data_dir):
+        for sub in os.listdir(self.params.data_path):
             if sub not in self.params.current_subs:
                 # Check if the sub belongs to the current set or not (works for both train and val sets))
                 continue
-            sub_dir = os.path.join(self.params.data_dir, sub)
+            sub_dir = os.path.join(self.params.data_path, sub)
             preproc_dir = os.path.join(sub_dir, f'{sub}.preproc')
             for img_name in os.listdir(preproc_dir):
                 img_path = os.path.join(preproc_dir, img_name)
@@ -89,7 +93,7 @@ class FmriDataset(Dataset):
                 score_class = self.get_class(score)
                 
                 # Just an effort to increase the number of samples in the training set
-                replicas = 3
+                replicas = 5
                 for _ in range(replicas):
                     self.weights[score_class] += 1
                     self.samples.append((img_path, score))

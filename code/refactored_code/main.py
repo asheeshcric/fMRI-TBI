@@ -6,6 +6,8 @@ from tqdm import tqdm
 
 import numpy as np
 import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
 import torchio as tio
 from torch import optim
 from sklearn.metrics import confusion_matrix
@@ -87,8 +89,8 @@ if __name__ == '__main__':
         tio.RandomElasticDeformation(): 0.2,
         tio.RandomAffine(): 0.8
     }
-    transform = torchio.Compose([
-        tio.Oneof(spatial_transforms, p=0.5),
+    transform = tio.Compose([
+        tio.OneOf(spatial_transforms, p=0.5),
         tio.ZNormalization(),
         tio.RescaleIntensity((0, 1))
     ])
@@ -97,11 +99,11 @@ if __name__ == '__main__':
     train_subs, val_subs = split_train_val(val_pct=0.2)
     
     # Build the training set
-    params.update({'valid_subs': train_subs})
+    params.update({'current_subs': train_subs})
     train_set = FmriDataset(params=params, transform=transform)
     
     # Build the validation set
-    params.update({'valid_subs': val_subs})
+    params.update({'current_subs': val_subs})
     val_set = FmriDataset(params=params, transform=transform)
     
     params.class_weights = torch.FloatTensor(
@@ -114,7 +116,7 @@ if __name__ == '__main__':
     # DataParallel settings
     params.num_gpus = torch.cuda.device_count()
     print(f'Number of GPUs available: {params.num_gpus}')
-    if device.type == 'cuda' and params.num_gpus > 1:
+    if params.device.type == 'cuda' and params.num_gpus > 1:
         model = nn.DataParallel(model, list(range(params.num_gpus)))
     
     # Load train and validation sets
