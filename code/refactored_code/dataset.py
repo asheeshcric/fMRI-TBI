@@ -4,6 +4,7 @@ import random
 import numpy as np
 import torch
 import torchio as tio
+from nilearn import image as nil_image
 from scipy import ndimage
 from PIL import Image
 from torch.utils.data import Dataset
@@ -66,16 +67,17 @@ class FmriDataset(Dataset):
     def read_mask(self):
         mask_path = os.path.join(self.params.mask_dir, self.params.mask_type)
         nX, nY, nZ = self.params.nX, self.params.nY, self.params.nZ
-        mask_img = tio.ScalarImage(mask_path).data
-        mask_img = np.array(mask_img)
+        mask_img = nil_image.load_img(mask_path).get_fdata()[:]
+        mask_img = np.asarray(mask_img)
         dilated_mask = np.zeros((nX, nY, nZ))
-        ratio = round(mask_image.shape[2]/nZ)
+        ratio = round(mask_img.shape[2]/nZ)
         for k in range(nZ):
-            temp = ndimage.morphology.binary_dilation(mask_img[:, :, k*ratio], iterations=1) * 1
+            temp = ndimage.morphology.binary_dilation(
+                mask_img[:, :, k*ratio], iterations=1) * 1
             temp_img = Image.fromarray(np.uint8(temp*255))
             dilated_mask [:, :, k]= np.array(temp_img.resize((nY, nX)))
         dilated_mask = (dilated_mask > 64).astype(int)
-        dilated_mask = torch.tensor(dilated_mask, dtype=torch.float, device=self.device)
+        dilated_mask = torch.tensor(dilated_mask, dtype=torch.float, device=self.params.device)
         return dilated_mask
         
     def index_data(self):
