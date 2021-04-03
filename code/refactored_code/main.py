@@ -65,6 +65,8 @@ def train(model, train_loader, val_loader, params):
             _, _, train_acc = test(model, train_loader)
             _, _, val_acc = test(model, val_loader)
             print(f'Epoch: {epoch+1} | Loss: {loss} | Train Acc: {train_acc} | Validation Acc: {val_acc}')
+        else:
+            print(f'Epoch: {epoch+1} | Loss: {loss}')
     
     print('Training complete')
     return model
@@ -80,6 +82,7 @@ if __name__ == '__main__':
     if args.mask_type:
         params.mask_type = args.mask_type
         params.include_mask = True
+        print(f'Using {params.mask_type} to train the model')
     params.num_epochs = args.epochs
     params.seg_len = args.seg_len
     params.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -90,7 +93,8 @@ if __name__ == '__main__':
         tio.RandomAffine(): 0.8
     }
     transform = tio.Compose([
-        tio.OneOf(spatial_transforms, p=0.5),
+        #tio.OneOf(spatial_transforms, p=0.5),
+        tio.RandomAffine(),
         tio.ZNormalization(),
         tio.RescaleIntensity((0, 1))
     ])
