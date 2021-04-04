@@ -9,7 +9,9 @@ class FmriModel(nn.Module):
         
         # Using only one convolutional layer
         self.conv = nn.Sequential(
-            nn.Conv2d(params.nX, params.conv_channels, kernel_size=3, stride=1, bias=False)
+            nn.Conv2d(params.nX, params.conv_channels, kernel_size=3, stride=1, bias=False),
+            nn.BatchNorm2d(params.conv_channels),
+            nn.ReLU(True)
         )
         
         # Extra work to automatically find sizes for conv output and lstm input
