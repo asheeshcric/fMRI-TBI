@@ -58,4 +58,4 @@ class FmriModel(nn.Module):
         r_out = self.fc(r_out[:, -1, :])
 
         # Apply softmax to the output and return it
-        return F.log_softmax(r_out, dim=1)
+        return r_out

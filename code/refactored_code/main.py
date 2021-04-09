@@ -29,7 +29,7 @@ def get_confusion_matrix(params, preds, actual):
 def test(model, data_loader):
     correct, total = 0, 0
     preds, actual = [], []
-    
+    model.eval()
     with torch.no_grad():
         for batch in tqdm(data_loader):
             if not batch:
@@ -43,6 +43,7 @@ def test(model, data_loader):
             actual.extend(list(labels.to(dtype=torch.int64)))
             
     acc = 100*(correct/total)
+    model.train()
     return preds, actual, acc
 
 def train(model, train_loader, val_loader, params):
@@ -59,6 +60,8 @@ def train(model, train_loader, val_loader, params):
             outputs = model(inputs)
             loss = loss_function(outputs, labels)
             loss.backward()
+            # Clip the gradients because I'm using LSTM layer in the model
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
             optimizer.step()
             
         if epoch % 2 != 0:
@@ -95,9 +98,9 @@ if __name__ == '__main__':
     }
     transform = tio.Compose([
         #tio.OneOf(spatial_transforms, p=0.5),
-        tio.RandomAffine(),
+        #tio.RandomAffine(),
         tio.ZNormalization(),
-        tio.RescaleIntensity((0, 1))
+        #tio.RescaleIntensity((0, 1))
     ])
     
     # Split train and validation subjects
