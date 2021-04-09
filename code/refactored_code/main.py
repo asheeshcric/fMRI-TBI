@@ -96,11 +96,15 @@ if __name__ == '__main__':
         tio.RandomElasticDeformation(): 0.2,
         tio.RandomAffine(): 0.8
     }
+    other_transforms = {
+        tio.RandomBlur(): 0.7,
+        tio.RandomGamma(): 0.3,
+    }
     transform = tio.Compose([
-        #tio.OneOf(spatial_transforms, p=0.5),
-        #tio.RandomAffine(),
+        tio.RandomNoise(): 0.4,
+        tio.OneOf(other_transforms),
         tio.ZNormalization(),
-        #tio.RescaleIntensity((0, 1))
+        tio.RescaleIntensity((0, 1))
     ])
     
     # Split train and validation subjects
