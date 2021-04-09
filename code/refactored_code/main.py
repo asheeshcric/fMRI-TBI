@@ -101,7 +101,7 @@ if __name__ == '__main__':
         tio.RandomGamma(): 0.3,
     }
     transform = tio.Compose([
-        tio.RandomNoise(): 0.4,
+        tio.RandomNoise(),
         tio.OneOf(other_transforms),
         tio.ZNormalization(),
         tio.RescaleIntensity((0, 1))
