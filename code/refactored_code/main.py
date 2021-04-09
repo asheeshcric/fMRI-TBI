@@ -31,7 +31,7 @@ def test(model, data_loader):
     preds, actual = [], []
     model.eval()
     with torch.no_grad():
-        for batch in tqdm(data_loader):
+        for batch in data_loader:
             if not batch:
                 continue
             inputs, labels =  batch[0].to(params.device), batch[1].to(params.device)
@@ -53,7 +53,7 @@ def train(model, train_loader, val_loader, params):
     # Star the training
     print(f'Training...')
     for epoch in range(params.num_epochs):
-        for batch in tqdm(train_loader):
+        for batch in train_loader:
             inputs, labels = batch[0].to(params.device), batch[1].to(params.device)
             optimizer.zero_grad()
             
@@ -66,10 +66,12 @@ def train(model, train_loader, val_loader, params):
             
         if epoch % 2 != 0:
             # Check train and val accuracy after every two epochs
+            print('Validating...')
             _, _, train_acc = test(model, train_loader)
             _, _, val_acc = test(model, val_loader)
             print(f'Epoch: {epoch+1} | Loss: {loss} | Train Acc: {train_acc} | Validation Acc: {val_acc}')
         else:
+            print('Training epoch...')
             print(f'Epoch: {epoch+1} | Loss: {loss}')
     
     print('Training complete')
@@ -101,8 +103,7 @@ if __name__ == '__main__':
         tio.RandomGamma(): 0.3,
     }
     transform = tio.Compose([
-        tio.RandomNoise(),
-        tio.OneOf(other_transforms),
+        tio.RandomAffine(),
         tio.ZNormalization(),
         tio.RescaleIntensity((0, 1))
     ])
