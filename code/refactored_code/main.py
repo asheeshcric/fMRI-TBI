@@ -103,13 +103,16 @@ if __name__ == '__main__':
         tio.RandomGamma(): 0.3,
     }
     transform = tio.Compose([
-        tio.RandomAffine(),
+        tio.RandomNoise(),
+        tio.RandomBlur(),
+        tio.RandomGamma(),
         tio.ZNormalization(),
         tio.RescaleIntensity((0, 1))
     ])
     
     # Split train and validation subjects
     train_subs, val_subs = split_train_val(val_pct=0.2)
+    print(f'Train: {train_subs}\nValidation: {val_subs}')
     
     # Build the training set
     params.update({'current_subs': train_subs})

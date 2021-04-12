@@ -7,7 +7,7 @@ params = edict({
     'num_gpus': 2,
     'num_epochs': 10,
     'num_classes': 6,
-    'batch_size': 3,
+    'batch_size': 5,
     'seg_len': 85,
     'nX': 57,
     'nY': 68,

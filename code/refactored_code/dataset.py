@@ -95,7 +95,7 @@ class FmriDataset(Dataset):
                 score_class = self.get_class(score)
                 
                 # Just an effort to increase the number of samples in the training set
-                replicas = 3
+                replicas = 5
                 for _ in range(replicas):
                     self.weights[score_class] += 1
                     self.samples.append((img_path, score))
