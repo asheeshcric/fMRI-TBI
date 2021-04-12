@@ -2,9 +2,9 @@
 
 - 2D layers from a 3D fMRI brain scan
 
-![](https://raw.githubusercontent.com/asheeshcric/fMRI-TBI/main/fmri.png)
+![](https://s4.gifyu.com/images/fmri.png)
 
 
 Original fMRI Scan Sample       |     Flanker Test fMRI Scan Sample
 :------------------------------:|:-------------------------:
-![](https://raw.githubusercontent.com/asheeshcric/fMRI-TBI/main/original_fmri.gif)  |  ![](https://raw.githubusercontent.com/asheeshcric/fMRI-TBI/main/flanker_fmri.gif)
+![](https://s4.gifyu.com/images/original_fmri.gif)  |  ![](https://s4.gifyu.com/images/flanker_fmri.md.gif)
