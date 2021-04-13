@@ -99,13 +99,12 @@ if __name__ == '__main__':
         tio.RandomAffine(): 0.8
     }
     other_transforms = {
-        tio.RandomBlur(): 0.7,
+        tio.RandomBlur(): 0.3,
         tio.RandomGamma(): 0.3,
+        tio.RandomNoise(): 0.4
     }
     transform = tio.Compose([
-        tio.RandomNoise(),
-        tio.RandomBlur(),
-        tio.RandomGamma(),
+        tio.OneOf(other_transforms),
         tio.ZNormalization(),
         tio.RescaleIntensity((0, 1))
     ])
