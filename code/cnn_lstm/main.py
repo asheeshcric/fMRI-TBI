@@ -73,6 +73,11 @@ def train(model, train_loader, val_loader, params):
         else:
             print('Training epoch...')
             print(f'Epoch: {epoch+1} | Loss: {loss}')
+            
+        # Save checkpoint after every 10 epochs
+        if (epoch+1) % 10 == 0:
+            current_time = datetime.now().strftime('%m_%d_%Y_%H_%M')
+            torch.save(model.state_dict(), f'{params.file_name}-{current_time}-lr-{params.learning_rate}-epochs-{params.num_epochs}.pth')
     
     print('Training complete')
     return model
@@ -84,6 +89,7 @@ if __name__ == '__main__':
     parser.add_argument('--seg_len', type=int, default=85, help='Number of scans in a segment')
     parser.add_argument('--epochs', type=int, default=10, help='Number of epochs')
     parser.add_argument('--mask_type', type=str, default='', help='Type of mask to be used')
+    parser.add_argument('--file_name', type=str, default='default', help='Saved model file name')
     args = parser.parse_args()
     if args.mask_type:
         params.mask_type = args.mask_type
@@ -92,6 +98,7 @@ if __name__ == '__main__':
     params.num_epochs = args.epochs
     params.seg_len = args.seg_len
     params.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    params.file_name = args.file_name
     
     # Specify the types of transforms to be applied to the fMRI scans
     spatial_transforms = {
