@@ -9,7 +9,16 @@ class FmriModel(nn.Module):
         
         # Using only one convolutional layer
         self.conv = nn.Sequential(
-            nn.Conv2d(params.nX, params.conv_channels, kernel_size=3, stride=1, bias=False)
+            nn.Conv2d(params.nX, params.conv_channels, kernel_size=3, stride=1, bias=False),
+            nn.BatchNorm2d(params.conv_channels),
+            nn.ReLU(inplace=True),
+            
+            nn.Conv2d(params.conv_channels, 2*params.conv_channels, kernel_size=3, stride=1, bias=False),
+            nn.BatchNorm2d(2*params.conv_channels),
+            nn.ReLU(inplace=True),
+            
+            nn.Conv2d(2*params.conv_channels, 4*params.conv_channels, kernel_size=3, stride=1, bias=False),
+            nn.BatchNorm2d(4*params.conv_channels),
         )
         
         # Extra work to automatically find sizes for conv output and lstm input
@@ -56,4 +65,4 @@ class FmriModel(nn.Module):
         r_out = self.fc(r_out[:, -1, :])
 
         # Apply softmax to the output and return it
-        return F.log_softmax(r_out, dim=1)
+        return r_out

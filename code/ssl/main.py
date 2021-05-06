@@ -2,6 +2,7 @@ import argparse
 import math
 import os
 import random
+from datetime import datetime
 from tqdm import tqdm
 
 import numpy as np
@@ -17,6 +18,16 @@ from config import params, split_train_val
 from dataset import FmriDataset
 
 
+"""
+Demo Run Command:
+
+>> python main.py --epochs=100 --file_name="affine_motion_noise_caudate" --mask_type="caudate_mask.nii"
+
+# file_name is the name that you want to use while saving the model
+
+"""
+
+
 
 def get_confusion_matrix(params, preds, actual):
     preds = [int(k) for k in preds]
@@ -28,9 +39,9 @@ def get_confusion_matrix(params, preds, actual):
 def test(model, data_loader):
     correct, total = 0, 0
     preds, actual = [], []
-    
+    model.eval()
     with torch.no_grad():
-        for batch in tqdm(data_loader):
+        for batch in data_loader:
             if not batch:
                 continue
             inputs, labels =  batch[0].to(params.device), batch[1].to(params.device)
@@ -42,6 +53,7 @@ def test(model, data_loader):
             actual.extend(list(labels.to(dtype=torch.int64)))
             
     acc = 100*(correct/total)
+    model.train()
     return preds, actual, acc
 
 def train(model, train_loader, val_loader, params):
@@ -51,20 +63,31 @@ def train(model, train_loader, val_loader, params):
     # Star the training
     print(f'Training...')
     for epoch in range(params.num_epochs):
-        for batch in tqdm(train_loader):
+        for batch in train_loader:
             inputs, labels = batch[0].to(params.device), batch[1].to(params.device)
             optimizer.zero_grad()
             
             outputs = model(inputs)
             loss = loss_function(outputs, labels)
             loss.backward()
+            # Clip the gradients because I'm using LSTM layer in the model
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
             optimizer.step()
             
         if epoch % 2 != 0:
             # Check train and val accuracy after every two epochs
+            print('Validating...')
             _, _, train_acc = test(model, train_loader)
             _, _, val_acc = test(model, val_loader)
             print(f'Epoch: {epoch+1} | Loss: {loss} | Train Acc: {train_acc} | Validation Acc: {val_acc}')
+        else:
+            print('Training epoch...')
+            print(f'Epoch: {epoch+1} | Loss: {loss}')
+            
+        # Save checkpoint after every 10 epochs
+        if (epoch+1) % 10 == 0:
+            current_time = datetime.now().strftime('%m_%d_%Y_%H_%M')
+            torch.save(model.state_dict(), f'{params.file_name}-{current_time}-lr-{params.learning_rate}-epochs-{epoch+1}-acc-{val_acc:.2f}.pth')
     
     print('Training complete')
     return model
@@ -76,6 +99,7 @@ if __name__ == '__main__':
     parser.add_argument('--seg_len', type=int, default=85, help='Number of scans in a segment')
     parser.add_argument('--epochs', type=int, default=10, help='Number of epochs')
     parser.add_argument('--mask_type', type=str, default='', help='Type of mask to be used')
+    parser.add_argument('--file_name', type=str, default='default', help='Saved model file name')
     args = parser.parse_args()
     if args.mask_type:
         params.mask_type = args.mask_type
@@ -84,20 +108,29 @@ if __name__ == '__main__':
     params.num_epochs = args.epochs
     params.seg_len = args.seg_len
     params.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    params.file_name = args.file_name
     
     # Specify the types of transforms to be applied to the fMRI scans
     spatial_transforms = {
         tio.RandomElasticDeformation(): 0.2,
         tio.RandomAffine(): 0.8
     }
+    other_transforms = {
+        tio.RandomBlur(): 0.5,
+        tio.RandomGamma(): 0.5,
+        #tio.RandomNoise(): 0.4
+    }
     transform = tio.Compose([
-        tio.OneOf(spatial_transforms, p=0.5),
+        tio.RandomAffine(),
+        tio.RandomMotion(),
+        tio.RandomNoise(),
         tio.ZNormalization(),
         tio.RescaleIntensity((0, 1))
     ])
     
     # Split train and validation subjects
     train_subs, val_subs = split_train_val(val_pct=0.2)
+    print(f'Train: {train_subs}\nValidation: {val_subs}')
     
     # Build the training set
     params.update({'current_subs': train_subs})
@@ -127,14 +160,14 @@ if __name__ == '__main__':
     # Train the model
     model = train(model, train_loader, val_loader, params)
     
-    # Once trained, save the model checkpoint
-    current_time = datetime.now().strftime('%m_%d_%Y_%H_%M')
-    torch.save(model.state_dict(), f'{current_time}-lr-{params.learning_rate}-epochs-{params.num_epochs}.pth')
-    
     # Validate the model
     preds, actual, acc = test(model, val_loader)
     print(f'Validation Accuracy: {acc}')
     print(get_confusion_matrix(params, preds, actual))
+    
+    # Save the model checkpoint
+    current_time = datetime.now().strftime('%m_%d_%Y_%H_%M')
+    torch.save(model.state_dict(), f'{current_time}-lr-{params.learning_rate}-epochs-{params.num_epochs}-acc-{acc:.2f}.pth')
     
     # Also, print the train and val subs for information
     print(f'Train subs: {train_subs}\n\nValidation subs: {val_subs}')
