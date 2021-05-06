@@ -18,6 +18,16 @@ from config import params, split_train_val
 from dataset import FmriDataset
 
 
+"""
+Demo Run Command:
+
+>> python main.py --epochs=100 --file_name="affine_motion_noise_caudate" --mask_type="caudate_mask.nii"
+
+# file_name is the name that you want to use while saving the model
+
+"""
+
+
 
 def get_confusion_matrix(params, preds, actual):
     preds = [int(k) for k in preds]
@@ -111,12 +121,9 @@ if __name__ == '__main__':
         #tio.RandomNoise(): 0.4
     }
     transform = tio.Compose([
-        tio.RandomFlip(),
         tio.RandomAffine(),
         tio.RandomMotion(),
         tio.RandomNoise(),
-        tio.RandomBlur(),
-        tio.RandomGamma(),
         tio.ZNormalization(),
         tio.RescaleIntensity((0, 1))
     ])
