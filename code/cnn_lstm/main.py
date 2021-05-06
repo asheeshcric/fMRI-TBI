@@ -77,7 +77,7 @@ def train(model, train_loader, val_loader, params):
         # Save checkpoint after every 10 epochs
         if (epoch+1) % 10 == 0:
             current_time = datetime.now().strftime('%m_%d_%Y_%H_%M')
-            torch.save(model.state_dict(), f'{params.file_name}-{current_time}-lr-{params.learning_rate}-epochs-{params.num_epochs}.pth')
+            torch.save(model.state_dict(), f'{params.file_name}-{current_time}-lr-{params.learning_rate}-epochs-{epoch+1}-acc-{val_acc:.2f}.pth')
     
     print('Training complete')
     return model
@@ -106,12 +106,17 @@ if __name__ == '__main__':
         tio.RandomAffine(): 0.8
     }
     other_transforms = {
-        tio.RandomBlur(): 0.3,
-        tio.RandomGamma(): 0.3,
-        tio.RandomNoise(): 0.4
+        tio.RandomBlur(): 0.5,
+        tio.RandomGamma(): 0.5,
+        #tio.RandomNoise(): 0.4
     }
     transform = tio.Compose([
-        tio.OneOf(other_transforms),
+        tio.RandomFlip(),
+        tio.RandomAffine(),
+        tio.RandomMotion(),
+        tio.RandomNoise(),
+        tio.RandomBlur(),
+        tio.RandomGamma(),
         tio.ZNormalization(),
         tio.RescaleIntensity((0, 1))
     ])
@@ -148,14 +153,14 @@ if __name__ == '__main__':
     # Train the model
     model = train(model, train_loader, val_loader, params)
     
-    # Once trained, save the model checkpoint
-    current_time = datetime.now().strftime('%m_%d_%Y_%H_%M')
-    torch.save(model.state_dict(), f'{current_time}-lr-{params.learning_rate}-epochs-{params.num_epochs}.pth')
-    
     # Validate the model
     preds, actual, acc = test(model, val_loader)
     print(f'Validation Accuracy: {acc}')
     print(get_confusion_matrix(params, preds, actual))
+    
+    # Save the model checkpoint
+    current_time = datetime.now().strftime('%m_%d_%Y_%H_%M')
+    torch.save(model.state_dict(), f'{current_time}-lr-{params.learning_rate}-epochs-{params.num_epochs}-acc-{acc:.2f}.pth')
     
     # Also, print the train and val subs for information
     print(f'Train subs: {train_subs}\n\nValidation subs: {val_subs}')
