@@ -92,20 +92,19 @@ def main_worker(gpu, args):
     model = DistributedDataParallel(model, device_ids=[gpu])
     
     # Data transform: Specify the types of transforms to be applied to the fMRI scans
-    spatial_transforms = {
-        tio.RandomElasticDeformation(): 0.2,
-        tio.RandomAffine(): 0.8
-    }
+#     spatial_transforms = {
+#         tio.RandomElasticDeformation(): 0.2,
+#         tio.RandomAffine(): 0.8
+#     }
     other_transforms = {
-        tio.RandomBlur(): 0.5,
-        tio.RandomGamma(): 0.5,
-        #tio.RandomNoise(): 0.4
+        tio.RandomBlur(): 0.25,
+        tio.RandomGamma(): 0.25,
+        tio.RandomMotion(): 0.25,
+        tio.RandomNoise(): 0.25
     }
     transform = tio.Compose([
-        tio.OneOf(spatial_transforms),
+        tio.RandomAffine(),
         tio.OneOf(other_transforms),
-        tio.RandomMotion(),
-        tio.RandomNoise(),
         tio.ZNormalization(),
         tio.RescaleIntensity((0, 1))
     ])
