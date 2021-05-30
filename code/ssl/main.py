@@ -37,34 +37,20 @@ Demo Run Command:
 
 """
 
-
-
-def get_confusion_matrix(params, preds, actual):
-    preds = [int(k) for k in preds]
-    actual = [int(k) for k in actual]
-    
-    cf = confusion_matrix(actual, preds, labels=list(range(params.num_classes)))
-    return cf
-
-def test(model, data_loader):
-    correct, total = 0, 0
-    preds, actual = [], []
-    model.eval()
+def accuracy(output, target, topk=(1,)):
     with torch.no_grad():
-        for batch in data_loader:
-            if not batch:
-                continue
-            inputs, labels =  batch[0].to(params.device), batch[1].to(params.device)
-            outputs = model(inputs)
-            _, class_pred = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (class_pred == labels).sum().item()
-            preds.extend(list(class_pred.to(dtype=torch.int64)))
-            actual.extend(list(labels.to(dtype=torch.int64)))
-            
-    acc = 100*(correct/total)
-    model.train()
-    return preds, actual, acc
+        maxk = max(topk)
+        batch_size = target.size(0)
+        _, pred = output.topk(maxk, 1, True, True)
+        pred = pred.t()
+        correct = pred.eq(target.view(1, -1).expand_as(pred))
+        
+        res = []
+        for k in topk:
+            correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
+            res.append(correct_k.mul_(100.0/batch_size))
+        return res
+
 
 def train(train_loader, model, criterion, optimizer, epoch, args):
     # Switch to training model
@@ -115,7 +101,8 @@ def main_worker(gpu, args):
         #tio.RandomNoise(): 0.4
     }
     transform = tio.Compose([
-        tio.RandomAffine(),
+        tio.Oneof(spatial_transforms),
+        tio.Oneof(other_transforms),
         tio.RandomMotion(),
         tio.RandomNoise(),
         tio.ZNormalization(),
@@ -189,14 +176,12 @@ if __name__ == '__main__':
     parser.add_argument('-wr', '--workers', default=0, type=int,help='Number of workers')
     
     args = parser.parse_args()
-    args = args.update(params)
-    
-    if args.mask_type:
-        args.include_mask = True
-        print(f'Using {args.mask_type} to train the model')
+    for key, value in params.items():
+        setattr(args, key, value)
     args.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     args.world_size = args.gpus*args.nodes
-    
+    print(args)
+    exit()
     
     # Initialize environment variables for Distributed training
     os.environ['MASTER_ADDR'] = '192.168.88.20'
