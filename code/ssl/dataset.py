@@ -57,7 +57,10 @@ class BoldDataset(Dataset):
                     self.samples.append(file_path)
                     
     def read_image(self, img_path):
+        # Original image shape: (106, 106, 69, 194)
+        # How can we make it something similar to fMRI data that we have?
         img = tio.ScalarImage(img_path).data
+        print(f'Image shape: {img.shape}')
         # Make sure that the dimensions are uniform
         nX, nY, nZ = self.params.nX, self.params.nY, self.params.nZ
         img = img[:nX, :nY, :nZ, :]
