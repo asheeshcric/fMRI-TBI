@@ -88,6 +88,7 @@ def main_worker(gpu, args):
     model = moco.builder.MoCo(FmriModel, args, args.moco_dim, args.moco_k, args.moco_m,
                              args.moco_t, args.mlp)
     torch.cuda.set_device(gpu)
+    model.cuda(gpu)
     model = DistributedDataParallel(model, device_ids=[gpu])
     
     # Data transform: Specify the types of transforms to be applied to the fMRI scans
@@ -101,8 +102,8 @@ def main_worker(gpu, args):
         #tio.RandomNoise(): 0.4
     }
     transform = tio.Compose([
-        tio.Oneof(spatial_transforms),
-        tio.Oneof(other_transforms),
+        tio.OneOf(spatial_transforms),
+        tio.OneOf(other_transforms),
         tio.RandomMotion(),
         tio.RandomNoise(),
         tio.ZNormalization(),
@@ -117,7 +118,7 @@ def main_worker(gpu, args):
                              drop_last=True)
     
     # Criterion and optimizer
-    criterion = nn.CrosssEntropyLoss().cuda(gpu)
+    criterion = nn.CrossEntropyLoss().cuda(gpu)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     
     for epoch in range(args.num_epochs):
@@ -180,8 +181,6 @@ if __name__ == '__main__':
         setattr(args, key, value)
     args.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     args.world_size = args.gpus*args.nodes
-    print(args)
-    exit()
     
     # Initialize environment variables for Distributed training
     os.environ['MASTER_ADDR'] = '192.168.88.20'

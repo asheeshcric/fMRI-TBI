@@ -3,16 +3,16 @@ from easydict import EasyDict as edict
 
 
 params = edict({
-    'data_path': '/data/fmri/data',
+    'data_path': '/data/fmri/public_datasets/BOLD5000',
     'num_gpus': 2,
     'num_epochs': 10,
     'num_classes': 6,
-    'batch_size': 10,
+    'batch_size': 5,
     'seg_len': 85,
     'nX': 57,
     'nY': 68,
     'nZ': 49,
-    'learning_rate': 0.0001,
+    'learning_rate': 0.001,
     'conv_channels': 16,
     'rnn_hidden_size': 128,
     'include_mask': False,
