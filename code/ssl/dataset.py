@@ -37,7 +37,7 @@ class BoldDataset(Dataset):
         img1 = self.read_image(img_path)
         img2 = self.read_image(img_path)
         
-        return img1, img2
+        return (img1, img2)
     
     def index_data(self):
         # params.data_path contains the data_dir and has only four subjects

@@ -13,15 +13,25 @@ import torchio as tio
 from torch import optim
 from sklearn.metrics import confusion_matrix
 
+# For distributed training
+import torch.distributed as dist
+import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel
+from torch.utils.data.distributed import DistributedSampler
+
+# Import MOCO model classes
+import moco.loader
+import moco.builder
+
 from model import FmriModel
 from config import params, split_train_val
-from dataset import FmriDataset
+from dataset import BoldDataset
 
 
 """
 Demo Run Command:
 
->> python main.py --epochs=100 --file_name="affine_motion_noise_caudate" --mask_type="caudate_mask.nii"
+>> python main.py --epochs=100 --file_name="affine_motion_noise_caudate"
 
 # file_name is the name that you want to use while saving the model
 
@@ -56,61 +66,45 @@ def test(model, data_loader):
     model.train()
     return preds, actual, acc
 
-def train(model, train_loader, val_loader, params):
-    loss_function = nn.CrossEntropyLoss(weight=params.class_weights)
-    optimizer = optim.Adam(model.parameters(), lr=params.learning_rate)
+def train(train_loader, model, criterion, optimizer, epoch, args):
+    # Switch to training model
+    model.train()
     
     # Star the training
-    print(f'Training...')
-    for epoch in range(params.num_epochs):
-        for batch in train_loader:
-            inputs, labels = batch[0].to(params.device), batch[1].to(params.device)
-            optimizer.zero_grad()
-            
-            outputs = model(inputs)
-            loss = loss_function(outputs, labels)
-            loss.backward()
-            # Clip the gradients because I'm using LSTM layer in the model
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
-            optimizer.step()
-            
-        if epoch % 2 != 0:
-            # Check train and val accuracy after every two epochs
-            print('Validating...')
-            _, _, train_acc = test(model, train_loader)
-            _, _, val_acc = test(model, val_loader)
-            print(f'Epoch: {epoch+1} | Loss: {loss} | Train Acc: {train_acc} | Validation Acc: {val_acc}')
-        else:
-            print('Training epoch...')
-            print(f'Epoch: {epoch+1} | Loss: {loss}')
-            
-        # Save checkpoint after every 10 epochs
-        if (epoch+1) % 10 == 0:
-            current_time = datetime.now().strftime('%m_%d_%Y_%H_%M')
-            torch.save(model.state_dict(), f'{params.file_name}-{current_time}-lr-{params.learning_rate}-epochs-{epoch+1}-acc-{val_acc:.2f}.pth')
-    
-    print('Training complete')
-    return model
+    for i, segments in enumerate(train_loader):
+        segments[0] = segments[0].cuda(args.gpu, non_blocking=True).float()
+        segments[1] = segments[1].cuda(args.gpu, non_blocking=True).float()
+        
+        # Compute output from the model
+        output, target = model(im_q=segments[0], im_k=segments[1])
+        # print(f'output.shape: {output.shape}')
+        # print(f'target: {target}')
+        loss = criterion(output, target)
+                
+        # Compute gradient and do a SGD step
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
 
 
-if __name__ == '__main__':
-    # Hyperparameters settings
-    parser = argparse.ArgumentParser(description='fMRI training for fatigue prediction hyperparameters')
-    parser.add_argument('--seg_len', type=int, default=85, help='Number of scans in a segment')
-    parser.add_argument('--epochs', type=int, default=10, help='Number of epochs')
-    parser.add_argument('--mask_type', type=str, default='', help='Type of mask to be used')
-    parser.add_argument('--file_name', type=str, default='default', help='Saved model file name')
-    args = parser.parse_args()
-    if args.mask_type:
-        params.mask_type = args.mask_type
-        params.include_mask = True
-        print(f'Using {params.mask_type} to train the model')
-    params.num_epochs = args.epochs
-    params.seg_len = args.seg_len
-    params.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    params.file_name = args.file_name
+
+def main_worker(gpu, args):
+    # Set GPU id to current GPU to use it for training
+    args.gpu = gpu
+    # Compute the rank of the current GPU among all (by using node rank and n_gpus_per_node)
+    rank = args.nr * args.gpus + gpu
+    # Initialize distributed training group
+    dist.init_process_group(backend='nccl', init_method='env://',
+                           world_size=args.world_size, rank=rank)
     
-    # Specify the types of transforms to be applied to the fMRI scans
+    # Load model on current GPU using distributed parallel
+    print(f'==> Creating model for GPU: {gpu}')
+    model = moco.builder.MoCo(FmriModel, args, args.moco_dim, args.moco_k, args.moco_m,
+                             args.moco_t, args.mlp)
+    torch.cuda.set_device(gpu)
+    model = DistributedDataParallel(model, device_ids=[gpu])
+    
+    # Data transform: Specify the types of transforms to be applied to the fMRI scans
     spatial_transforms = {
         tio.RandomElasticDeformation(): 0.2,
         tio.RandomAffine(): 0.8
@@ -128,48 +122,85 @@ if __name__ == '__main__':
         tio.RescaleIntensity((0, 1))
     ])
     
-    # Split train and validation subjects
-    train_subs, val_subs = split_train_val(val_pct=0.2)
-    print(f'Train: {train_subs}\nValidation: {val_subs}')
+    # Load train dataset
+    train_dataset = BoldDataset(params=args, transform=transform)
+    train_sampler = DistributedSampler(train_dataset, num_replicas=args.world_size, rank=rank)
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False,
+                             num_workers=args.workers, pin_memory=True, sampler=train_sampler,
+                             drop_last=True)
     
-    # Build the training set
-    params.update({'current_subs': train_subs})
-    train_set = FmriDataset(params=params, transform=transform)
+    # Criterion and optimizer
+    criterion = nn.CrosssEntropyLoss().cuda(gpu)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     
-    # Build the validation set
-    params.update({'current_subs': val_subs})
-    val_set = FmriDataset(params=params, transform=transform)
+    for epoch in range(args.num_epochs):
+        print(f'EPOCH: {epoch}\t', end='')
+        train_sampler.set_epoch(epoch)
+        train(train_loader, model, criterion, optimizer, epoch, args)
+        
+        # Save a model checkpoint
+        if rank % args.gpus == 0 and epoch == args.num_epochs - 1:
+            print(f'Saving model checkpoint at rank: {rank}')
+            state = {
+                'epochs': epoch,
+                'frame_size': f'{args.nX}_{args.nY}_{args.nZ}',
+                'state_dict': model.state_dict(),
+                'optimizer': optimizer.state_dict()
+            }
+            filename = f'saved_models/moco_pretrained_{state["frame_size"]}_epoch_{epoch}.pth.tar'
+            torch.save(state, filename)
+
+if __name__ == '__main__':
+    # Hyperparameters settings
+    parser = argparse.ArgumentParser(description='fMRI training for fatigue prediction hyperparameters')
+    parser.add_argument('--seg_len', type=int, default=85, help='Number of scans in a segment')
+    parser.add_argument('--epochs', type=int, default=10, help='Number of epochs')
+    parser.add_argument('--mask_type', type=str, default='', help='Type of mask to be used')
+    parser.add_argument('--file_name', type=str, default='default', help='Saved model file name')
     
-    params.class_weights = torch.FloatTensor(
-        [train_set.class_weights[i] for i in range(params.num_classes)]
-    ).to(params.device)
+    # moco specific configs:
+    parser.add_argument('--moco-dim', default=128, type=int,
+                        help='feature dimension (default: 128)')
+    parser.add_argument('--moco-k', default=65536, type=int,
+                        help='queue size; number of negative keys (default: 65536)')
+    parser.add_argument('--moco-m', default=0.999, type=float,
+                        help='moco momentum of updating key encoder (default: 0.999)')
+    parser.add_argument('--moco-t', default=0.07, type=float,
+                        help='softmax temperature (default: 0.07)')
     
-    # Initialize the model
-    model = FmriModel(params=params).to(params.device)
+    # options for moco v2
+    parser.add_argument('--mlp', action='store_true',
+                        help='use mlp head')
+    parser.add_argument('--aug-plus', action='store_true',
+                        help='use moco v2 data augmentation')
+    parser.add_argument('--cos', action='store_true',
+                        help='use cosine lr schedule')
     
-    # DataParallel settings
-    params.num_gpus = torch.cuda.device_count()
-    print(f'Number of GPUs available: {params.num_gpus}')
-    if params.device.type == 'cuda' and params.num_gpus > 1:
-        model = nn.DataParallel(model, list(range(params.num_gpus)))
+    # other arguments
+    parser.add_argument('--momentum', default=0.9, type=float, metavar='M', help='momentum of SGD solver')
+    parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float,
+                        metavar='W', help='weight decay (default: 1e-4)', dest='weight_decay')
     
-    # Load train and validation sets
-    train_loader = DataLoader(train_set, batch_size=params.batch_size, shuffle=True)
-    val_loader = DataLoader(val_set, batch_size=params.batch_size, shuffle=True)
+    # Args for distributed training
+    parser.add_argument('-n', '--nodes', default=1, type=int, metavar='N', help='number of data loading workers (default: 4)')
+    parser.add_argument('-g', '--gpus', default=2, type=int, help='number of gpus per node')
+    parser.add_argument('-gpu', '--gpu', default=None, type=int, help='GPU id to use for training')
+    parser.add_argument('-nr', '--nr', default=0, type=int,help='ranking within the nodes')
+    parser.add_argument('-wr', '--workers', default=0, type=int,help='Number of workers')
     
-    # Train the model
-    model = train(model, train_loader, val_loader, params)
+    args = parser.parse_args()
+    args = args.update(params)
     
-    # Validate the model
-    preds, actual, acc = test(model, val_loader)
-    print(f'Validation Accuracy: {acc}')
-    print(get_confusion_matrix(params, preds, actual))
+    if args.mask_type:
+        args.include_mask = True
+        print(f'Using {args.mask_type} to train the model')
+    args.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    args.world_size = args.gpus*args.nodes
     
-    # Save the model checkpoint
-    current_time = datetime.now().strftime('%m_%d_%Y_%H_%M')
-    torch.save(model.state_dict(), f'{current_time}-lr-{params.learning_rate}-epochs-{params.num_epochs}-acc-{acc:.2f}.pth')
     
-    # Also, print the train and val subs for information
-    print(f'Train subs: {train_subs}\n\nValidation subs: {val_subs}')
-    
+    # Initialize environment variables for Distributed training
+    os.environ['MASTER_ADDR'] = '192.168.88.20'
+    os.environ['MASTER_PORT'] = '8888'
+    mp.spawn(main_worker, nprocs=args.gpus, args=(args,))
+        
     
