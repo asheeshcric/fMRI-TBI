@@ -15,6 +15,7 @@ class BoldDataset(Dataset):
     BOLD5000 dataset contains fMRI data from 4 subjects taken when showing them various images to study their brain stimuli
     Can use 3 subs for training and one for testing
     Or all 4 for SSL pre-training
+    fMRI dimension: ([106, 106, 69, 194]) <== x, y, z, t
     """
     
     def __init__(self, params, transform=None):
@@ -37,6 +38,8 @@ class BoldDataset(Dataset):
         img1 = self.read_image(img_path)
         img2 = self.read_image(img_path)
         
+        # print(f'Img shapes: {img1.shape} || {img2.shape}')
+        
         return (img1, img2)
     
     def index_data(self):
@@ -56,14 +59,22 @@ class BoldDataset(Dataset):
                     file_path = os.path.join(sess_path, file_name)
                     self.samples.append(file_path)
                     
+    def slice_size(self, original, new):
+        diff = original - new
+        start = diff // 2
+        end = original - (diff - start)
+        return start, end
+                    
     def read_image(self, img_path):
         # Original image shape: (106, 106, 69, 194)
         # How can we make it something similar to fMRI data that we have?
         img = tio.ScalarImage(img_path).data
-        print(f'Image shape: {img.shape}')
+        
         # Make sure that the dimensions are uniform
-        nX, nY, nZ = self.params.nX, self.params.nY, self.params.nZ
-        img = img[:nX, :nY, :nZ, :]
+        startX, endX = self.slice_size(img.shape[0], self.params.nX)
+        startY, endY = self.slice_size(img.shape[1], self.params.nY)
+        startZ, endZ = self.slice_size(img.shape[2], self.params.nZ)
+        img = img[startX:endX, startY:endY, startZ:endZ, :]
         if self.transform:
             img = self.transform(img)
         
