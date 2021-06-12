@@ -45,6 +45,7 @@ class BoldDataset(Dataset):
     def index_data(self):
         # params.data_path contains the data_dir and has only four subjects
         subjects = ['sub-CSI1', 'sub-CSI2', 'sub-CSI3', 'sub-CSI4']
+        corrupt_scans = []
         for sub in subjects:
             sub_path = os.path.join(self.params.data_path, sub)
             for session in os.listdir(sub_path):
@@ -57,8 +58,23 @@ class BoldDataset(Dataset):
                         # Ignore files that are not fMRI scans
                         continue
                     file_path = os.path.join(sess_path, file_name)
-                    self.samples.append(file_path)
+                    # Check if image shape is appropriate for training
+                    if self.check_image_size(file_path):
+                        self.samples.append(file_path)
+                    else:
+                        print(file_path)
+                        corrupt_scans.append(file_path)
+                        
+        with open('corrupt_scans.txt', 'w') as c_file:
+            c_file.writelines(corrupt_scans)
                     
+    def check_image_size(self, file_path):
+        img = tio.ScalarImage(file_path).data
+        x, y, z, t = img.shape
+        check = x < self.params.nX or y < self.params.nY or z < self.params.nZ or t < self.params.seg_len
+        return not check
+    
+    
     def slice_size(self, original, new):
         diff = original - new
         start = diff // 2
