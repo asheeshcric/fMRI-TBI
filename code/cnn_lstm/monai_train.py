@@ -19,15 +19,21 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 import monai
-from monai.data import ImageDataset
+from monai.data import ImageDataset, decollate_batch
+from monai.metrics import ROCAUCMetric
 from monai.transforms import (
-    AddChannel,
+    Activations,
+    AddChanneld,
+    AsDiscrete,
     Compose,
-    RandRotate90,
-    Resize,
-    ScaleIntensity,
+    LoadImaged,
+    RandRotate90d,
+    Resized,
+    ScaleIntensityd,
+    EnsureTyped,
     EnsureType,
 )
+
 
 from config import params, split_train_val
 
