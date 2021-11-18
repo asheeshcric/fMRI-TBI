@@ -1,3 +1,4 @@
+.vscode
 trained_models/
 error.txt
 cf_matrices.txt
