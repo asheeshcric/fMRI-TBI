@@ -70,7 +70,7 @@ def main():
 
     # Prepare dataset to load
     train_subs, val_subs = split_train_val(val_pct=0.2)
-    print(f"Train: {train_subs}\nValidation: {val_subs}")
+    print(f"Train: {train_subs}\n\nValidation: {val_subs}")
 
     # Build the training set
     params.update({"current_subs": train_subs})
