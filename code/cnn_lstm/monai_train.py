@@ -19,49 +19,44 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 import monai
-from monai.data import decollate_batch
-from monai.metrics import ROCAUCMetric
+from monai.data import ImageDataset
 from monai.transforms import (
-    Activations,
-    AddChanneld,
-    AsDiscrete,
+    AddChannel,
     Compose,
-    LoadImaged,
-    RandRotate90d,
-    Resized,
-    ScaleIntensityd,
-    EnsureTyped,
+    RandRotate90,
+    Resize,
+    ScaleIntensity,
     EnsureType,
 )
 
 from config import params, split_train_val
-from dataset import FmriDataset
 
 
 def get_class(score):
-        """
-        Categorize each score into one of the five classes (bins)
-        Returns values from 0-5 (6 classes)
-        Classes: (0, 10), (10, 20), (20, 40), (40, 60), (60, 80), (80, 100)
-        """
-        if score < 10:
-            return 0
-        elif score >= 10 and score < 20:
-            return 1
-        elif score >= 20 and score < 40:
-            return 2
-        elif score >= 40 and score < 60:
-            return 3
-        elif score >= 60 and score < 80:
-            return 4
-        else:
-            return 5
+    """
+    Categorize each score into one of the five classes (bins)
+    Returns values from 0-5 (6 classes)
+    Classes: (0, 10), (10, 20), (20, 40), (40, 60), (60, 80), (80, 100)
+    """
+    if score < 10:
+        return 0
+    elif score >= 10 and score < 20:
+        return 1
+    elif score >= 20 and score < 40:
+        return 2
+    elif score >= 40 and score < 60:
+        return 3
+    elif score >= 60 and score < 80:
+        return 4
+    else:
+        return 5
+
 
 def get_img_labels(subs):
     root_dir = "/data/fmri/data"
     imgs, labels = [], []
     for sub in subs:
-        sub_path = os.path.join(root_dir, sub, f'{sub}.preproc')
+        sub_path = os.path.join(root_dir, sub, f"{sub}.preproc")
         labels_0_back = os.path.join(root_dir, sub, "0back_VAS-f.1D")
         labels_2_back = os.path.join(root_dir, sub, "2back_VAS-f.1D")
         for img_name in os.listdir(sub_path):
@@ -113,35 +108,30 @@ def main():
     # Prepare dataset to load
     train_subs, val_subs = split_train_val(val_pct=0.2)
     print(f"Train: {train_subs}\nValidation: {val_subs}")
-    
+
     train_imgs, train_labels = get_img_labels(train_subs)
     val_imgs, val_labels = get_img_labels(val_subs)
-    
+
     # print(f'Train images: {train_imgs}\n\Train Labels: {train_labels}')
-    
-    
 
-    # Build the training set
-    params.update({"current_subs": train_subs})
-    train_ds = FmriDataset(params=params, transform=train_transforms)
-
-    # Build the validation set
-    params.update({"current_subs": val_subs})
-    val_ds = FmriDataset(params=params, transform=val_transforms)
-
-
-    # create a training data loader
+    # Create a training data loader
+    train_ds = ImageDataset(
+        image_files=train_imgs, labels=train_labels, transform=train_transforms
+    )
     train_loader = DataLoader(
         train_ds,
         batch_size=2,
         shuffle=True,
-        num_workers=4,
+        num_workers=2,
         pin_memory=torch.cuda.is_available(),
     )
 
     # create a validation data loader
+    val_ds = ImageDataset(
+        image_files=val_imgs[-10:], val=val_labels, transform=val_transforms
+    )
     val_loader = DataLoader(
-        val_ds, batch_size=2, num_workers=4, pin_memory=torch.cuda.is_available()
+        val_ds, batch_size=2, num_workers=2, pin_memory=torch.cuda.is_available()
     )
 
     # Create DenseNet121, CrossEntropyLoss and Adam optimizer
