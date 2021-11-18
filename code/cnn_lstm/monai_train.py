@@ -38,6 +38,48 @@ from config import params, split_train_val
 from dataset import FmriDataset
 
 
+def get_class(score):
+        """
+        Categorize each score into one of the five classes (bins)
+        Returns values from 0-5 (6 classes)
+        Classes: (0, 10), (10, 20), (20, 40), (40, 60), (60, 80), (80, 100)
+        """
+        if score < 10:
+            return 0
+        elif score >= 10 and score < 20:
+            return 1
+        elif score >= 20 and score < 40:
+            return 2
+        elif score >= 40 and score < 60:
+            return 3
+        elif score >= 60 and score < 80:
+            return 4
+        else:
+            return 5
+
+def get_img_labels(subs):
+    root_dir = "/data/fmri/data"
+    imgs, labels = [], []
+    for sub in subs:
+        sub_path = os.path.join(root_dir, sub, f'{sub}.preproc')
+        labels_0_back = os.path.join(root_dir, sub, "0back_VAS-f.1D")
+        labels_2_back = os.path.join(root_dir, sub, "2back_VAS-f.1D")
+        for img_name in os.listdir(sub_path):
+            labels_path = labels_0_back if "0back" in img_name else labels_2_back
+            with open(labels_path, "r") as labels_file:
+                curr_labels = labels_file.readlines()
+            curr_labels = [int(value.replace("\n", "")) for value in curr_labels]
+            sess_id = int(img_name.split("back.")[1][2])
+            try:
+                actual_label = curr_labels[int(sess_id)]
+            except IndexError:
+                continue
+            img_path = os.path.join(sub_path, img_name)
+            imgs.append(img_path)
+            labels.append(get_class(actual_label))
+    return imgs, labels
+
+
 def main():
     monai.config.print_config()
     logging.basicConfig(stream=sys.stdout, level=logging.INFO)
@@ -70,7 +112,14 @@ def main():
 
     # Prepare dataset to load
     train_subs, val_subs = split_train_val(val_pct=0.2)
-    print(f"Train: {train_subs}\n\nValidation: {val_subs}")
+    print(f"Train: {train_subs}\nValidation: {val_subs}")
+    
+    train_imgs, train_labels = get_img_labels(train_subs)
+    val_imgs, val_labels = get_img_labels(val_subs)
+    
+    # print(f'Train images: {train_imgs}\n\Train Labels: {train_labels}')
+    
+    
 
     # Build the training set
     params.update({"current_subs": train_subs})
