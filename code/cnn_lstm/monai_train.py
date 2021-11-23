@@ -19,18 +19,13 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 import monai
-from monai.data import ImageDataset, decollate_batch
-from monai.metrics import ROCAUCMetric
+from monai.data import ImageDataset
 from monai.transforms import (
-    Activations,
-    AddChanneld,
-    AsDiscrete,
+    AddChannel,
     Compose,
-    LoadImaged,
-    RandRotate90d,
-    Resized,
-    ScaleIntensityd,
-    EnsureTyped,
+    RandRotate90,
+    Resize,
+    ScaleIntensity,
     EnsureType,
 )
 
@@ -88,28 +83,19 @@ def main():
     # IXI dataset as a demo, downloadable from https://brain-development.org/ixi-dataset/
     # the path of ixi IXI-T1 dataset
 
-    # Define transforms for image
+    # Define transforms
     train_transforms = Compose(
         [
-            LoadImaged(keys=["img"]),
-            AddChanneld(keys=["img"]),
-            ScaleIntensityd(keys=["img"]),
-            Resized(keys=["img"], spatial_size=(48, 48, 48)),
-            RandRotate90d(keys=["img"], prob=0.8, spatial_axes=[0, 2]),
-            EnsureTyped(keys=["img"]),
+            ScaleIntensity(),
+            AddChannel(),
+            Resize((96, 96, 96)),
+            RandRotate90(),
+            EnsureType(),
         ]
     )
     val_transforms = Compose(
-        [
-            LoadImaged(keys=["img"]),
-            AddChanneld(keys=["img"]),
-            ScaleIntensityd(keys=["img"]),
-            Resized(keys=["img"], spatial_size=(48, 48, 48)),
-            EnsureTyped(keys=["img"]),
-        ]
+        [ScaleIntensity(), AddChannel(), Resize((96, 96, 96)), EnsureType()]
     )
-    post_pred = Compose([EnsureType(), Activations(softmax=True)])
-    post_label = Compose([EnsureType(), AsDiscrete(to_onehot=True, num_classes=2)])
 
     # Prepare dataset to load
     train_subs, val_subs = split_train_val(val_pct=0.2)
@@ -134,7 +120,7 @@ def main():
 
     # create a validation data loader
     val_ds = ImageDataset(
-        image_files=val_imgs[-10:], val=val_labels, transform=val_transforms
+        image_files=val_imgs, val=val_labels, transform=val_transforms
     )
     val_loader = DataLoader(
         val_ds, batch_size=2, num_workers=2, pin_memory=torch.cuda.is_available()
@@ -143,16 +129,16 @@ def main():
     # Create DenseNet121, CrossEntropyLoss and Adam optimizer
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = monai.networks.nets.DenseNet121(
-        spatial_dims=3, in_channels=1, out_channels=6
+        spatial_dims=3, in_channels=1, out_channels=2
     ).to(device)
     loss_function = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), 1e-5)
-    auc_metric = ROCAUCMetric()
 
     # start a typical PyTorch training
     val_interval = 2
     best_metric = -1
-    best_metric_epoch = -1
+    epoch_loss_values = list()
+    metric_values = list()
     writer = SummaryWriter()
     for epoch in range(5):
         print("-" * 10)
@@ -162,9 +148,7 @@ def main():
         step = 0
         for batch_data in train_loader:
             step += 1
-            inputs, labels = batch_data["img"].to(device), batch_data["label"].to(
-                device
-            )
+            inputs, labels = batch_data[0].to(device), batch_data[1].to(device)
             optimizer.zero_grad()
             outputs = model(inputs)
             loss = loss_function(outputs, labels)
@@ -175,46 +159,38 @@ def main():
             print(f"{step}/{epoch_len}, train_loss: {loss.item():.4f}")
             writer.add_scalar("train_loss", loss.item(), epoch_len * epoch + step)
         epoch_loss /= step
+        epoch_loss_values.append(epoch_loss)
         print(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
 
         if (epoch + 1) % val_interval == 0:
             model.eval()
             with torch.no_grad():
-                y_pred = torch.tensor([], dtype=torch.float32, device=device)
-                y = torch.tensor([], dtype=torch.long, device=device)
+                num_correct = 0.0
+                metric_count = 0
                 for val_data in val_loader:
-                    val_images, val_labels = val_data["img"].to(device), val_data[
-                        "label"
-                    ].to(device)
-                    y_pred = torch.cat([y_pred, model(val_images)], dim=0)
-                    y = torch.cat([y, val_labels], dim=0)
-
-                acc_value = torch.eq(y_pred.argmax(dim=1), y)
-                acc_metric = acc_value.sum().item() / len(acc_value)
-                y_onehot = [post_label(i) for i in decollate_batch(y)]
-                y_pred_act = [post_pred(i) for i in decollate_batch(y_pred)]
-                auc_metric(y_pred_act, y_onehot)
-                auc_result = auc_metric.aggregate()
-                auc_metric.reset()
-                del y_pred_act, y_onehot
-                if acc_metric > best_metric:
-                    best_metric = acc_metric
+                    val_images, val_labels = val_data[0].to(device), val_data[1].to(
+                        device
+                    )
+                    val_outputs = model(val_images)
+                    value = torch.eq(val_outputs.argmax(dim=1), val_labels)
+                    metric_count += len(value)
+                    num_correct += value.sum().item()
+                metric = num_correct / metric_count
+                metric_values.append(metric)
+                if metric > best_metric:
+                    best_metric = metric
                     best_metric_epoch = epoch + 1
                     torch.save(
                         model.state_dict(),
-                        "best_metric_model_classification3d_dict.pth",
+                        "best_metric_model_classification3d_array.pth",
                     )
                     print("saved new best metric model")
                 print(
-                    "current epoch: {} current accuracy: {:.4f} current AUC: {:.4f} best accuracy: {:.4f} at epoch {}".format(
-                        epoch + 1,
-                        acc_metric,
-                        auc_result,
-                        best_metric,
-                        best_metric_epoch,
+                    "current epoch: {} current accuracy: {:.4f} best accuracy: {:.4f} at epoch {}".format(
+                        epoch + 1, metric, best_metric, best_metric_epoch
                     )
                 )
-                writer.add_scalar("val_accuracy", acc_metric, epoch + 1)
+                writer.add_scalar("val_accuracy", metric, epoch + 1)
     print(
         f"train completed, best_metric: {best_metric:.4f} at epoch: {best_metric_epoch}"
     )
