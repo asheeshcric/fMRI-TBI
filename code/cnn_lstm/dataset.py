@@ -35,7 +35,8 @@ class FmriDataset(Dataset):
         # Apply temporal augmentation
         img = self.apply_temporal_aug(img)
         
-        return img, score
+        #return img, score
+        return {"img": img, "label": score}
         
     def read_image(self, img_path):
         img = tio.ScalarImage(img_path).data
